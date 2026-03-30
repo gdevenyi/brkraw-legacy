@@ -97,7 +97,7 @@ class PvDatasetBase:
     def get_dataobj(self, scan_id, reco_id):
         import numpy as np
         from .reference import BYTEORDER, WORDTYPE
-        from .utils import get_value, is_all_element_same
+        from .utils import get_value
 
         # parse datatype
         visu_pars = self.get_visu_pars(scan_id, reco_id)

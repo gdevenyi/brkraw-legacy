@@ -697,7 +697,6 @@ def is_localizer(pvobj, scan_id, reco_id):
 
 def override_header(pvobj, subjtype, position):
     """override subject position and subject type"""
-    import warnings
     if position is not None:
         try:
             pvobj.override_position(position)
