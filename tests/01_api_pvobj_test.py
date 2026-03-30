@@ -8,5 +8,5 @@ def test_loaddata(dataset):
             try:
                 pvscan = pvobj.get_scan(scan_id)
                 logging.info("Scan loaded for %s", pvscan.path[1])
-            except:
+            except Exception:
                 raise AssertionError

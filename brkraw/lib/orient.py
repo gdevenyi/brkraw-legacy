@@ -154,7 +154,7 @@ def get_origin(slice_position, gradient_orient):
         rx, ry, rz = calc_eulerangle(np.round(zmat.T))
 
     if max_delta_axis == 0:     # sagital
-        if rx != None: # PV 5 filter, only PV6 has gradient_orient info
+        if rx is not None: # PV 5 filter, only PV6 has gradient_orient info
             if rz == 90: # typical case
                 idx = slice_position.T[max_delta_axis].argmin()
             else:
@@ -162,7 +162,7 @@ def get_origin(slice_position, gradient_orient):
         else:
             idx = slice_position.T[max_delta_axis].argmax()
     elif max_delta_axis == 1:   # coronal
-        if rx != None:
+        if rx is not None:
             if rx == -90:    # FOV flipped
                 if ry == -90:   # Cyceron cases # 5 and 9
                     idx = slice_position.T[max_delta_axis].argmax()
@@ -173,7 +173,7 @@ def get_origin(slice_position, gradient_orient):
         else:
             idx = slice_position.T[max_delta_axis].argmaxs()
     elif max_delta_axis == 2:   # axial
-        if rx != None:
+        if rx is not None:
             if (abs(ry) == 180) or ((abs(rx) == 180) and (abs(rz) == 180)):
                 # typical case
                 idx = slice_position.T[max_delta_axis].argmax()

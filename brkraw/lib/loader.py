@@ -1,17 +1,18 @@
-from .errors import *
+from .errors import FileNotValidError, InvalidApproach, UnexpectedError
 from .orient import build_affine_from_orient_info, reversed_pose_correction, get_origin
 from .pvobj import PvDatasetDir, PvDatasetZip
-from .utils import *
+from functools import reduce
+from .utils import get_value, is_all_element_same, multiply_all, encdir_code_converter, meta_get_value
 from .orient import to_matvec
-from .reference import ERROR_MESSAGES, ISSUE_REPORT
+from .reference import ERROR_MESSAGES, ISSUE_REPORT, COMMON_META_REF
 import numpy as np
 import zipfile
 import pathlib
 import os
 import re
 import warnings
-np.set_printoptions(formatter={'float_kind':'{:f}'.format})
 import enum
+np.set_printoptions(formatter={'float_kind':'{:f}'.format})
 
 
 @enum.unique
@@ -105,7 +106,7 @@ class BrukerLoader():
         self._override_position = None
         self._override_type = None
 
-        if (self.num_scans > 0) and (self._subject != None):
+        if (self.num_scans > 0) and (self._subject is not None):
             self._is_pvdataset = True
         else:
             self._is_pvdataset = False
@@ -154,7 +155,7 @@ class BrukerLoader():
             if side not in ['Supine', 'Prone', 'Left', 'Right']:
                 raise Exception(err_msg)
             self._override_position = position_string
-        except:
+        except Exception:
             raise Exception(err_msg)
 
     def close(self):
@@ -255,7 +256,7 @@ class BrukerLoader():
                 dataobj_ = np.swapaxes(dataobj_, 2, slice_axis_)
             return dataobj_
 
-        if fg_info['frame_type'] != None:
+        if fg_info['frame_type'] is not None:
             if group_id[0] == 'FG_SLICE':
                 pass
 
@@ -327,9 +328,9 @@ class BrukerLoader():
         affine = self._get_affine(visu_pars, method)
 
         data_slp, data_off = self._get_dataslp(visu_pars)
-        if isinstance(data_slp, list) and slope != None:
+        if isinstance(data_slp, list) and slope is not None:
             slope = True
-            if isinstance(data_off, list) and offset != None:
+            if isinstance(data_off, list) and offset is not None:
                 offset = True
 
         imgobj = self.get_dataobj(scan_id, reco_id, slope=slope, offset=offset)
@@ -359,7 +360,7 @@ class BrukerLoader():
                     f = multiply_all(imgobj_.shape[3:])
                     # all converted nifti must be 4D
                     imgobj_ = imgobj_.reshape([x, y, z, f])
-                if crop != None:
+                if crop is not None:
                     if crop[0] is None:
                         niiobj_ = Nifti1Image(imgobj_[..., :crop[1]], affine)
                     elif crop[1] is None:
@@ -377,7 +378,7 @@ class BrukerLoader():
                 f = multiply_all(imgobj.shape[3:])
                 # all converted nifti must be 4D
                 imgobj = imgobj.reshape([x, y, z, f])
-        if crop != None:
+        if crop is not None:
             if crop[0] is None:
                 niiobj = Nifti1Image(imgobj[..., :crop[1]], affine)
             elif crop[1] is None:
@@ -511,7 +512,7 @@ class BrukerLoader():
             val = meta_get_value(v, acqp, method, visu_pars)
             if k in ['PhaseEncodingDirection', 'SliceEncodingDirection']:
                 # Convert the encoding direction meta data into BIDS format
-                if val != None:
+                if val is not None:
                     if isinstance(val, int):
                         val = encdir_dic[val]
                     else:
@@ -551,7 +552,7 @@ class BrukerLoader():
 
     def save_json(self, scan_id, reco_id, filename, dir='./', metadata=None, condition=None):
         json_obj = self._parse_json(scan_id, reco_id, metadata)
-        if condition != None:
+        if condition is not None:
             code, idx = condition
             if code == 'me':    # multi-echo
                 if 'EchoTime' in json_obj.keys():
@@ -577,7 +578,7 @@ class BrukerLoader():
         # To use VolumeTiming, remove the RepetitionTime item in .json file generated from bids_helper.
 
         if ('RepetitionTime' in json_obj.keys()) and ('VolumeTiming' in json_obj.keys()):
-            if type(json_obj['RepetitionTime']) == int or type(json_obj['RepetitionTime']) == float:
+            if isinstance(json_obj['RepetitionTime'], (int, float)):
                 del json_obj['VolumeTiming']
                 msg = "Both 'RepetitionTime' and 'VolumeTiming' exist in your .json file, removed 'VolumeTiming' to make it valid for BIDS.\
                 \n To use VolumeTiming, remove the RepetitionTime item but keep VolumeTiming from the .json file generated from bids_helper."
@@ -599,7 +600,7 @@ class BrukerLoader():
             # date
             date = dt.datetime.strptime(re.sub(pattern_1, r'\2', subject_date), '%d %b %Y').date()
             # end time
-            if visu_pars != None:
+            if visu_pars is not None:
                 last_scan_time = get_value(visu_pars, 'VisuAcqDate')
                 last_scan_time = dt.time(*map(int, re.sub(pattern_1, r'\1', last_scan_time).split(':')))
                 acq_time = get_value(visu_pars, 'VisuAcqScanTime') / 1000.0
@@ -616,7 +617,7 @@ class BrukerLoader():
             date = dt.date(*map(int, re.sub(pattern_2, r'\1', subject_date).split('-')))
 
             # end date
-            if visu_pars != None:
+            if visu_pars is not None:
                 scan_time = get_value(visu_pars, 'VisuCreationDate')[0]
                 scan_time = dt.time(*map(int, re.sub(pattern_2, r'\2', scan_time).split(':')))
                 return dict(date=date,
@@ -630,7 +631,7 @@ class BrukerLoader():
 
     # printing functions / help documents
     def print_bids(self, scan_id, reco_id, fobj=None, metadata=None):
-        if fobj == None:
+        if fobj is None:
             import sys
             fobj = sys.stdout
         json_obj = self._parse_json(scan_id, reco_id, metadata)
@@ -646,7 +647,7 @@ class BrukerLoader():
         Args:
             io_handler: IO handler where to print out
         """
-        if io_handler == None:
+        if io_handler is None:
             import sys
             io_handler = sys.stdout
 
@@ -676,7 +677,7 @@ class BrukerLoader():
 
                     try:
                         datetime = self.get_scan_time()
-                    except:
+                    except Exception:
                         datetime = dict(date='None')
                     lines.append('UserAccount:\t{}'.format(user_account))
                     lines.append('Date:\t\t{}'.format(datetime['date']))
@@ -785,7 +786,7 @@ class BrukerLoader():
         else:
             niiobj.header.set_xyzt_units('mm')
         if not slope:
-            if slope != None:
+            if slope is not None:
                 if isinstance(data_slp, list):
                     raise InvalidApproach('Invalid slope size;'
                                           'The vector type scl_slope cannot be set in nifti header.')
@@ -795,7 +796,7 @@ class BrukerLoader():
         else:
             niiobj.header['scl_slope'] = 1
         if not offset:
-            if offset != None:
+            if offset is not None:
                 if isinstance(data_off, list):
                     raise InvalidApproach('Invalid offset size;'
                                           'The vector type scl_offset cannot be set in nifti header.')
@@ -814,7 +815,7 @@ class BrukerLoader():
         total_time = get_value(visu_pars, 'VisuAcqScanTime')
         fg_info = self._get_frame_group_info(visu_pars)
         parser = []
-        if fg_info['frame_type'] != None:
+        if fg_info['frame_type'] is not None:
             for id, fg in enumerate(fg_info['group_id']):
                 if not re.search('slice', fg, re.IGNORECASE):
                     parser.append(fg_info['matrix_shape'][id])
@@ -929,7 +930,7 @@ class BrukerLoader():
                     phase_enc_dir = get_value(visu_pars, 'VisuAcqImagePhaseEncDir')
                     phase_enc_dir = [phase_enc_dir[0]] if is_all_element_same(phase_enc_dir) else phase_enc_dir
                     num_slice_packs = len(phase_enc_dir)
-                except:
+                except Exception:
                     num_slice_packs = 1
                 matrix_shape = fg_info['matrix_shape']
                 frame_thickness = get_value(visu_pars, 'VisuCoreFrameThickness')
@@ -966,7 +967,7 @@ class BrukerLoader():
                             raise Exception(ERROR_MESSAGES['SlicePacksSlices'])
                         try:
                             num_slices_each_pack = [slices_info_in_pack[0][1] for _ in range(num_slice_packs)]
-                        except:
+                        except Exception:
                             raise Exception(ERROR_MESSAGES['SlicePacksSlices'])
                         if isinstance(slice_distance, list):
                             slice_distances_each_pack = [slice_distance[0] for _ in range(num_slice_packs)]
@@ -1004,7 +1005,7 @@ class BrukerLoader():
         orient_matrix = get_value(visu_pars, 'VisuCoreOrientation').tolist()
         slice_info = self._get_slice_info(visu_pars)
         slice_position = get_value(visu_pars, 'VisuCorePosition')
-        if self._override_position != None: # add option to override
+        if self._override_position is not None: # add option to override
             subj_position = self._override_position
         else:
             subj_position = get_value(visu_pars, 'VisuSubjectPosition')
@@ -1055,14 +1056,14 @@ class BrukerLoader():
                 raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
             try:
                 slice_position = get_origin(slice_position, gradient_orient)
-            except:
+            except Exception:
                 raise Exception(ERROR_MESSAGES['NumSlicePosition'])
 
             omatrix_parser = np.asarray(orient_matrix).reshape([3, 3])
             oorder_parser = get_axis_orient(omatrix_parser)
             vposition_parser = slice_position
 
-        if self._override_type != None: # add option to override
+        if self._override_type is not None: # add option to override
             subj_type = self._override_type
         else:
             subj_type = get_value(visu_pars, 'VisuSubjectType')    

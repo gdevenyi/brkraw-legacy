@@ -33,7 +33,7 @@ class PvDatasetBase:
         self._2dseq = dict()
 
     def _update_studyinfo(self):
-        if self._subject != None:
+        if self._subject is not None:
             subject = self._subject
             self.user_account   = subject.headers['OWNER']
             self.subj_id        = get_value(subject, 'SUBJECT_id')
@@ -84,7 +84,7 @@ class PvDatasetBase:
         for scan_id in self.avail_scan_id:
             try:
                 self._avail_recoid[scan_id] = sorted(list(map(lambda x: x.reco_id, self._visu_pars[scan_id])))
-            except:
+            except Exception:
                 self.avail_scan_id.remove(scan_id)
         return self._avail_recoid
 
@@ -97,7 +97,7 @@ class PvDatasetBase:
     def get_dataobj(self, scan_id, reco_id):
         import numpy as np
         from .reference import BYTEORDER, WORDTYPE
-        from .utils import get_value, is_all_element_same
+        from .utils import get_value
 
         # parse datatype
         visu_pars = self.get_visu_pars(scan_id, reco_id)

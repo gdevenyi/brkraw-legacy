@@ -31,7 +31,6 @@ from copy import copy
 from pathlib import Path
 from dataclasses import dataclass
 from .scan import Scan
-from brkraw import config
 from brkraw.api.pvobj import PvStudy
 from brkraw.api.analyzer.base import BaseAnalyzer
 from reshipe import RecipeParser

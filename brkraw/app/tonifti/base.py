@@ -31,7 +31,7 @@ class BaseMethods(BaseBufferHandler):
         if scale_correction:
             try:
                 dataobj = dataobj * data_dict['data_slope'] + data_dict['data_offset']
-            except ValueError as e:
+            except ValueError:
                 warnings.warn(
                     "Scale correction not applied. The 'slope' and 'offset' provided are not in a tested condition. "
                     "For further assistance, contact the developer via issue at: https://github.com/brkraw/brkraw.git",

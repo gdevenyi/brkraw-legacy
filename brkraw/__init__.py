@@ -1,4 +1,4 @@
-from .lib import *
+from .lib import BrukerLoader
 from xnippet import XnippetManager
 from xnippet import setup_logging
 
