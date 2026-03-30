@@ -3,7 +3,8 @@ from ..lib.errors import FileNotValidError, InvalidApproach, ValueConflictInFiel
 from .. import BrukerLoader, __version__
 from ..lib.utils import set_rescale, save_meta_files, mkdir
 import argparse
-import os, re
+import os
+import re
 import sys
 
 _supporting_bids_ver = '1.2.2'
