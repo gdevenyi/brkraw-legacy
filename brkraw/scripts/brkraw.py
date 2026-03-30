@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from operator import index
 from ..lib.errors import *
 from .. import BrukerLoader, __version__
 from ..lib.utils import set_rescale, save_meta_files, mkdir
@@ -74,8 +73,8 @@ def main():
 
     # bids_helper
     bids_helper.add_argument("input", help=input_dir_str, type=str)
-    bids_helper.add_argument("output", help="output BIDS datasheet filename", type=str) # [220202] make compatible with csv, tsv and xlsx
-    bids_helper.add_argument("-f", "--format", help="file format of BIDS dataheets. Use this option if you did not specify the extension on output. The available options are (csv/tsv/xlsx) (default: csv)", type=str, default='csv')
+    bids_helper.add_argument("output", help="output BIDS datasheet filename", type=str)
+    bids_helper.add_argument("-f", "--format", help="file format of BIDS datasheets. Use this option if you did not specify the extension on output. The available options are (csv/tsv) (default: csv)", type=str, default='csv')
     bids_helper.add_argument("-j", "--json", help="create JSON syntax template for "
                                                   "parsing metadata from the header", action='store_true')
     bids_helper.add_argument("-s", "--subj", help="switch subject and study IDs", action='store_true')
@@ -243,12 +242,13 @@ def main():
 
         # [220202] for back compatibility
         ds_fname, ds_output_ext = os.path.splitext(ds_output)
-        if ds_output_ext in ['.xlsx', '.csv', '.tsv']:
+        if ds_output_ext in ['.csv', '.tsv']:
+            # infer format from extension
             ds_format = ds_output_ext[1:]
         else:
             ds_format = args.format
 
-        # [220202] make compatible with csv, tsv and xlsx
+        # [220202] make compatible with csv and tsv
         output = '{}.{}'.format(ds_fname, ds_format) 
 
         Headers = ['RawData', 'SubjID', 'SessID', 'ScanID', 'RecoID', 'DataType',
@@ -316,9 +316,7 @@ def main():
                                         df = pd.concat([df, pd.DataFrame([item])], ignore_index=True)
                                     else:
                                         df = pd.concat([df, pd.DataFrame([item])], ignore_index=True)
-        if 'xlsx' in ds_format:
-            df.to_excel(output, index=None)
-        elif 'csv' in ds_format:
+        if 'csv' in ds_format:
             df.to_csv(output, index=None, sep=',')
         elif 'tsv' in ds_format:
             df.to_csv(output, index=None, sep='\t')
@@ -354,10 +352,8 @@ def main():
         output = args.output
         datasheet_ext = os.path.splitext(datasheet)[-1]
 
-        # [220202] make compatible with csv, tsv and xlsx
-        if 'xlsx' in datasheet_ext:
-            df = pd.read_excel(datasheet, dtype={'SubjID': str, 'SessID': str, 'run': str})
-        elif 'csv' in datasheet_ext:
+        # [220202] make compatible with csv and tsv
+        if 'csv' in datasheet_ext:
             df = pd.read_csv(datasheet, dtype={'SubjID': str, 'SessID': str, 'run': str}, index_col=None, header=0, sep=',')
         elif 'tsv' in datasheet_ext:
             df = pd.read_csv(datasheet, dtype={'SubjID': str, 'SessID': str, 'run': str}, index_col=None, header=0, sep='\t')

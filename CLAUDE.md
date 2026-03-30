@@ -11,9 +11,8 @@ Currently on `legacy` branch (v0.4.0 WIP).
 ## Build & Development Commands
 
 ```bash
-uv sync                       # Install project with dev dependencies (editable)
-uv pip install .              # Base install (non-editable)
-uv pip install .[all]         # All optional features (nibabel, SimpleITK, pillow, legacy)
+uv sync                       # Install with dev dependencies (editable, includes all runtime deps)
+uv sync --extra simpleitk       # Also include SimpleITK
 
 # Testing
 make tests/tutorials         # Clone tutorial data (required before running tests)
@@ -21,7 +20,7 @@ uv run pytest                # Run all tests (debug logging enabled by default)
 uv run pytest tests/01_api_pvobj_test.py  # Run a single test file
 
 # Linting
-uv run flake8 .              # Uses .flake8 config: max-line-length=127, max-complexity=10
+uv run ruff check .            # Uses ruff defaults
 
 # Demo / smoke test
 make demo
@@ -50,9 +49,9 @@ Raw Bruker Data (directory or ZIP)
 
 ### External dependencies of note
 
-- **xnippet** (git dependency) — configuration management framework, used for `XnippetManager` in `__init__.py`
+- **xnippet** (PyPI) — configuration management framework, used for `XnippetManager` in `__init__.py`
 - **reshipe** — data handling utilities
-- **nibabel** — NIfTI format support (optional)
+- **nibabel** — NIfTI format support (required, used in orientation math and conversion)
 
 ## Testing
 
@@ -60,4 +59,4 @@ Tests are numbered by layer: `01_api_pvobj`, `02_api_analyzer`, `03_api_helper`,
 
 ## Linting
 
-Flake8 with Google docstring convention. Ignores W291, W293 (trailing/leading whitespace). Type checking config in `[tool.mypy]` section of pyproject.toml.
+Ruff for linting. Type checking config in `mypy.ini`.
