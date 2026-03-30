@@ -11,8 +11,8 @@ import pathlib
 import os
 import re
 import warnings
-np.set_printoptions(formatter={'float_kind':'{:f}'.format})
 import enum
+np.set_printoptions(formatter={'float_kind':'{:f}'.format})
 
 
 @enum.unique
