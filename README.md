@@ -9,9 +9,8 @@
 The ‘BrkRaw’ is a python module designed to provide a comprehensive tool to access raw data acquired from 
 Bruker Biospin preclinical MRI scanner. This module is also compatible with the zip compressed data 
 to enable use of the archived data directly.  
-The module is comprised of four components, including graphical user interface (GUI), command-line tools, 
+The module is comprised of three components, including command-line tools,
 high-level and low-level python APIs.
-- For the GUI, we focused on improving convenience for checking metadata and previewing the reconstructed image.
 - For the command-line tool, we focused on providing tools for converting, organizing, archiving, and managing data.
 The command-line tool also provides easy-to-use function to convert large set of raw data into organized structure
 according to [BIDS](https://bids.neuroimaging.io).
@@ -38,7 +37,6 @@ please visit our [GitPage](https://brkraw.github.io).
 - [Command-line tool usage examples](https://brkraw.github.io/docs/gs_nii.html)
 - [Converting dataset into BIDS](https://brkraw.github.io/docs/gs_bids.html)
 - [Python API usage examples](https://brkraw.github.io/docs/ap_parent.html)
-- [GUI](https://brkraw.github.io/docs/gs_gui.html)
 - [Interactive Tutorial](https://mybinder.org/v2/gh/BrkRaw/tutorials/ac95b2c87b05664cb678c5dc1a930641397130ed)
 
 
