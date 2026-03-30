@@ -27,7 +27,7 @@ class Image(BaseHelper):
         
         if self.dim > 3:
             self._warn('Image dimension exceeds 3. Ensure that handling of higher dimensions is supported and correctly implemented.')
-        message = lambda x: f"The axis of the image includes '{x}' dimension, which is not limited to spatial types."
+        def message(x): return f"The axis of the image includes '{x}' dimension, which is not limited to spatial types."
         if isinstance(self.dim_desc, list):
             for d in self.dim_desc:
                 if d != 'spatial':
