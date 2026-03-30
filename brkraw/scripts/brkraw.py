@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from ..lib.errors import *
+from ..lib.errors import FileNotValidError, InvalidApproach, ValueConflictInField
 from .. import BrukerLoader, __version__
 from ..lib.utils import set_rescale, save_meta_files, mkdir
 import argparse

@@ -1,5 +1,5 @@
-from .errors import *
-from .reference import *
+from .errors import InvalidApproach, InvalidValueInField, UnexpectedError
+from .reference import HEADER, PARAMETER, ERROR_MESSAGES, ptrn_param, ptrn_key, ptrn_string, ptrn_float, ptrn_engnotation, ptrn_integer, ptrn_array, ptrn_complex_array, ptrn_braces, ptrn_bisstring, ptrn_at_array, ptrn_arraystring, ptrn_comment
 import re
 import os
 import numpy as np
