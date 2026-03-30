@@ -11,9 +11,8 @@ Currently on `legacy` branch (v0.4.0 WIP).
 ## Build & Development Commands
 
 ```bash
-uv sync                       # Install project with dev dependencies (editable)
-uv pip install .              # Base install (non-editable)
-uv pip install .[all]         # All optional features (nibabel, SimpleITK, legacy)
+uv sync                       # Install with dev dependencies (editable, includes all runtime deps)
+uv sync --extra simpleitk       # Also include SimpleITK
 
 # Testing
 make tests/tutorials         # Clone tutorial data (required before running tests)
@@ -52,7 +51,7 @@ Raw Bruker Data (directory or ZIP)
 
 - **xnippet** (PyPI) — configuration management framework, used for `XnippetManager` in `__init__.py`
 - **reshipe** — data handling utilities
-- **nibabel** — NIfTI format support (optional)
+- **nibabel** — NIfTI format support (required, used in orientation math and conversion)
 
 ## Testing
 

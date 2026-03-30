@@ -15,6 +15,8 @@ dependencies = [
     'tqdm>=4.64.0',
     'xnippet>=0.1.1',
     'reshipe>=0.1.0',
+    'nibabel>=3.2.1',
+    'pandas>=1.5.0',
 ]
 description = "Bruker PvDataset Loader"
 license = {text = "GNLv3"}
@@ -37,19 +39,8 @@ keywords = [
 Homepage = "https://brkraw.github.io"
 
 [project.optional-dependencies]
-all = ["brkraw[tonii]"]
-
-legacy = [
-    'brkraw[all]',
-    'pandas>=1.5.0',
-]
-
 simpleitk = [
     'SimpleITK>=2.2.1',
-]
-
-tonii = [
-    'nibabel>=3.2.1',
 ]
 
 dev = [

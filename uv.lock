@@ -44,7 +44,9 @@ wheels = [
 name = "brkraw"
 source = { editable = "." }
 dependencies = [
+    { name = "nibabel" },
     { name = "numpy" },
+    { name = "pandas" },
     { name = "pyyaml" },
     { name = "reshipe" },
     { name = "tqdm" },
@@ -52,34 +54,22 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-all = [
-    { name = "nibabel" },
-]
 dev = [
     { name = "nbmake" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "types-pyyaml" },
 ]
-legacy = [
-    { name = "nibabel" },
-    { name = "pandas" },
-]
 simpleitk = [
     { name = "simpleitk" },
-]
-tonii = [
-    { name = "nibabel" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "nbmake", marker = "extra == 'dev'" },
-    { name = "nibabel", marker = "extra == 'all'", specifier = ">=3.2.1" },
-    { name = "nibabel", marker = "extra == 'legacy'", specifier = ">=3.2.1" },
-    { name = "nibabel", marker = "extra == 'tonii'", specifier = ">=3.2.1" },
+    { name = "nibabel", specifier = ">=3.2.1" },
     { name = "numpy", specifier = ">=1.23.2" },
-    { name = "pandas", marker = "extra == 'legacy'", specifier = ">=1.5.0" },
+    { name = "pandas", specifier = ">=1.5.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "reshipe", specifier = ">=0.1.0" },
@@ -89,7 +79,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "xnippet", specifier = ">=0.1.1" },
 ]
-provides-extras = ["all", "dev", "legacy", "simpleitk", "tonii"]
+provides-extras = ["dev", "simpleitk"]
 
 [[package]]
 name = "certifi"

@@ -74,7 +74,6 @@ jobs:
     - name: Install dependencies
       run: |
         uv pip install .[dev] --system
-        uv pip install .[legacy] --system
 
     - name: Install tutorial
       run: make tests/tutorials
