@@ -8,7 +8,6 @@ import tqdm
 import pickle
 import zipfile
 from .cache import BackupCache
-import pickle
 import getpass
 
 
