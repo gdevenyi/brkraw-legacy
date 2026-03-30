@@ -13,7 +13,7 @@ dependencies = [
     'pyyaml>=6.0.1',
     'numpy>=1.18.0',
     'tqdm>=4.45.0',
-    'xnippet @ git+https://github.com/dvm-shlee/xnippet.git',
+    'xnippet>=0.1.1',
     'reshipe', #'reshipe @ git+https://github.com/dvm-shlee/reshipe.git'
 ]
 description = "Bruker PvDataset Loader"
@@ -40,7 +40,7 @@ Homepage = "https://brkraw.github.io"
 allow-direct-references = true
 
 [project.optional-dependencies]
-all = ["brkraw[tonii]", "brkraw[viewer]"]
+all = ["brkraw[tonii]"]
 
 legacy = [
     'brkraw[all]',
@@ -55,10 +55,6 @@ simpleitk = [
 
 tonii = [
     'nibabel>=3.0.2',
-]
-
-viewer = [
-    'pillow>=7.1.1'
 ]
 
 dev = [

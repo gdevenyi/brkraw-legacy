@@ -32,7 +32,6 @@ def main():
     info = subparsers.add_parser("info", help='Prints out the information of the internal contents in Bruker raw data')
     info.add_argument("input", help=input_str, type=str)
 
-    gui = subparsers.add_parser("gui", help='Run GUI mode')
     nii = subparsers.add_parser("tonii", help='Convert a single raw Bruker data into NifTi file(s)')
     niiall = subparsers.add_parser("tonii_all", help="Convert All raw Bruker data located in the input directory")
     bids_helper = subparsers.add_parser("bids_helper", help="Creates a BIDS datasheet "
@@ -41,13 +40,6 @@ def main():
                                                               "in the input directory based on the BIDS datasheet")
 
     # Adding arguments for each parser
-    # gui
-    gui.add_argument("-i", "--input", help=input_str, type=str, default=None)
-    gui.add_argument("-o", "--output", help=output_dir_str, type=str, default=None)
-    gui.add_argument("--ignore-slope", help='remove slope value from header', action='store_true')
-    gui.add_argument("--ignore-offset", help='remove offset value from header', action='store_true')
-    gui.add_argument("--ignore-rescale", help='remove slope and offset values from header', action='store_true')
-
     # tonii
     nii.add_argument("input", help=input_str, type=str)
     nii.add_argument("-b", "--bids", help=bids_opt, action='store_true')
@@ -119,33 +111,6 @@ def main():
                 study = BrukerLoader(p)
                 study.info()
 
-    elif args.function == 'gui':
-        ipath = args.input
-        opath = args.output
-        from ..ui.main_win import MainWindow
-        root = MainWindow()
-        if ipath != None:
-            root._path = ipath
-            if not args.ignore_rescale:
-                if args.ignore_slope:
-                    root._ignore_slope = True
-                else:
-                    root._ignore_slope = False
-                if args.ignore_offset:
-                    root._ignore_offset = True
-                else:
-                    root._ignore_offset = False
-            else:
-                root._ignore_slope = True
-                root._ignore_offset = True
-
-            root._extend_layout()
-            root._load_dataset()
-        if opath != None:
-            root._output = opath
-        else:
-            root._output = os.path.curdir
-        root.mainloop()
 
     elif args.function == 'tonii':
         path     = args.input
