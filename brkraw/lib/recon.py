@@ -66,7 +66,7 @@ class Reconstruction:
         """
         # META DATA
         dt_code = 'int32'
-        if self.acqp.get('ACQ_ScanPipeJobSettings') != None: 
+        if self.acqp.get('ACQ_ScanPipeJobSettings') is not None: 
             if self.acqp['ACQ_ScanPipeJobSettings'][0][1] == 'STORE_64bit_float':
                 dt_code = 'float64' 
     
@@ -90,7 +90,7 @@ class Reconstruction:
 
         else:
             # METAdata Versions Before 360        
-            self.NRecs = self.acqp.get('ACQ_ReceiverSelect').count('Yes') if self.acqp.get('ACQ_ReceiverSelect') != None else 1
+            self.NRecs = self.acqp.get('ACQ_ReceiverSelect').count('Yes') if self.acqp.get('ACQ_ReceiverSelect') is not None else 1
             ACQ_size = self.acqp['ACQ_size'] if isinstance(self.acqp['ACQ_size'],int) else self.acqp['ACQ_size']
             scanSize = ACQ_size[0]
             if self.acqp['GO_block_size'] == 'Standard_KBlock_Format':
@@ -121,7 +121,7 @@ class Reconstruction:
         FID    = [num_lines, channel, scan_size]
         KSPACE = [kx,ky,kz,NRec,NI,NR]
         """
-        if fid == None:
+        if fid is None:
             fid = self.sort_fid()
         if not self.supported_protocol:   
             warnings.warn("SEQUENCE PROTOCOL {} NOT SUPPORTED YET...\nreturning readout sorted".format(self.acqp.get('ACQ_scan_name' )))
@@ -208,7 +208,7 @@ class Reconstruction:
      
     # 4) CONVERT TO IMAGE SPACE if FULLY SAMPLED CARTESIAN
     def reconstruct(self, kspace=None, rms=True):
-        if kspace == None:
+        if kspace is None:
             kspace = self.process_kspace()
         if len(kspace.shape) != 6:
             return kspace # sorted fid

@@ -126,7 +126,7 @@ class BackupCache:
                 garbage = True
                 crashed = True
 
-            if raw_dname != None:
+            if raw_dname is not None:
                 r = self.get_rpath_obj(raw_dname)
             else:
                 r = None

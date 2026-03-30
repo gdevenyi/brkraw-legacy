@@ -269,7 +269,7 @@ def main():
             except:
                 dset = None
 
-            if dset != None:
+            if dset is not None:
                 if dset.is_pvdataset:
                     pvobj = dset.pvobj
 
@@ -698,7 +698,7 @@ def is_localizer(pvobj, scan_id, reco_id):
 def override_header(pvobj, subjtype, position):
     """override subject position and subject type"""
     import warnings
-    if position != None:
+    if position is not None:
         try:
             pvobj.override_position(position)
         except:
@@ -706,7 +706,7 @@ def override_header(pvobj, subjtype, position):
                   "The position variable can be defiend as <BodyPart>_<Side>," + \
                   "available BodyParts are (Head, Foot, Tail) and sides are (Supine, Prone, Left, Right). (e.g. Head_Supine)"
             raise InvalidApproach(msg)
-    if subjtype != None:
+    if subjtype is not None:
         try:
             pvobj.override_subjtype(subjtype)
         except:

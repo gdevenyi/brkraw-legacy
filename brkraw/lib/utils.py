@@ -30,7 +30,7 @@ def load_param(stringlist):
     for line_num, line in enumerate(stringlist):
         regex_obj = re.match(ptrn_param, line)
         # if line is key=value pair
-        if regex_obj != None:
+        if regex_obj is not None:
             # parse key and value
             key = re.sub(ptrn_param, r'\g<key>', line)
             value = re.sub(ptrn_param, r'\g<value>', line)
@@ -105,7 +105,7 @@ def convert_data_to(data, shape):
                         cont_parser = []
                         for cont in map(str.strip, parsed.group('contents').split(',')):
                             cont = convert_data_to(cont, -1)
-                            if cont != None:
+                            if cont is not None:
                                 cont_parser.append(cont)
                         if key not in parser.keys():
                             parser[key] = []
@@ -198,7 +198,7 @@ def meta_get_value(value, acqp, method, visu_pars):
         max_index = len(value) - 1
         for i, vi in enumerate(value):
             val = meta_get_value(vi, acqp, method, visu_pars)
-            if val != None:
+            if val is not None:
                 if val == vi:
                     if i == max_index:
                         parser.append(val)
@@ -235,7 +235,7 @@ def is_express(value):
 
 def meta_check_where(value, acqp, method, visu_pars):
     val = meta_get_value(value['key'], acqp, method, visu_pars)
-    if val != None:
+    if val is not None:
         if isinstance(value['where'], str):
             if value['where'] not in val:
                 return None
@@ -250,12 +250,12 @@ def meta_check_where(value, acqp, method, visu_pars):
 
 def meta_check_index(value, acqp, method, visu_pars):
     val = meta_get_value(value['key'], acqp, method, visu_pars)
-    if val != None:
+    if val is not None:
         if isinstance(value['idx'], int):
             return val[value['idx']]
         else:
             idx = meta_get_value(value['idx'], acqp, method, visu_pars)
-        if idx != None:
+        if idx is not None:
             return val[idx]
         else:
             return None
@@ -352,13 +352,13 @@ def bids_validation(df, idx, key, val, num_char_allowed, dtype=None):
         message = "{} You can't use more than {} characters.".format(loc, num_char_allowed)
         raise InvalidValueInField(message)
     matched = special_char.search(str_val)
-    if matched != None:
+    if matched is not None:
         if ' ' in matched.group():
             message = "{} Empty string is not allowed.".format(loc)
         else:
             message = "{} Special characters are not allowed.".format(loc)
         raise InvalidValueInField(message)
-    if dtype != None:
+    if dtype is not None:
         try:
             dtype(val)
         except:

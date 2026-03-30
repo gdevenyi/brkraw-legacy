@@ -147,7 +147,7 @@ class Orientation(BaseHelper):
             list: x, y, z coordinates of the volume origin
         """
         position = self._position[0] if isinstance(self._position, list) else self._position
-        position = position[id] if id != None else position
+        position = position[id] if id is not None else position
         
         dx, dy, dz = map(lambda x: x.max() - x.min(), position.T)
         max_diff_axis = np.argmax([dx, dy, dz])

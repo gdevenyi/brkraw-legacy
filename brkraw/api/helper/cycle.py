@@ -21,7 +21,7 @@ class Cycle(BaseHelper):
         scan_time = analobj.visu_pars.get("VisuAcqScanTime") or 0
         fg_info = analobj.get('info_frame_group') or FrameGroup(analobj).get_info()
         fg_cycle = []
-        if fg_info['type'] != None:
+        if fg_info['type'] is not None:
             fg_cycle.extend([fg_info['shape'][id] for id, fg in enumerate(fg_info['id']) \
                              if re.search('cycle', fg, re.IGNORECASE)])
         self.num_cycles = fg_cycle.pop() if len(fg_cycle) else 1
