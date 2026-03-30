@@ -22,16 +22,11 @@ def main():
                                        metavar='command')
 
     input_str = "input raw Bruker data"
-    input_dir_str = "input directory that contains multiple raw Bruker data"
-    output_dir_str = "output directory name"
-    output_fnm_str = "output filename"
-    bids_opt = "create a JSON file contains metadata based on BIDS recommendation"
-
     info = subparsers.add_parser("info", help='Prints out the information of the internal contents in Bruker raw data')
     
-    scan = subparsers.add_parser("scan", help='Convert a single raw Bruker data into NifTi file(s)')
-    study = subparsers.add_parser("study", help="Convert All raw Bruker data located in the input directory")
-    dataset = subparsers.add_parser("dataset", help="Convert All raw Bruker data located in the input directory")
+    subparsers.add_parser("scan", help='Convert a single raw Bruker data into NifTi file(s)')
+    subparsers.add_parser("study", help="Convert All raw Bruker data located in the input directory")
+    subparsers.add_parser("dataset", help="Convert All raw Bruker data located in the input directory")
 
     # info
     info.add_argument("input", help=input_str, type=str)

@@ -114,7 +114,6 @@ class StudyToNifti(Study, BaseMethods):
         header = super().info['header']
         scans = super().info['scans']
         title = header['sw_version']
-        date = header['date']
         print(title)
         print('-' * len(title))
         print('date: {date}')
