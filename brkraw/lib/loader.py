@@ -154,7 +154,7 @@ class BrukerLoader():
             if side not in ['Supine', 'Prone', 'Left', 'Right']:
                 raise Exception(err_msg)
             self._override_position = position_string
-        except:
+        except Exception:
             raise Exception(err_msg)
 
     def close(self):
@@ -676,7 +676,7 @@ class BrukerLoader():
 
                     try:
                         datetime = self.get_scan_time()
-                    except:
+                    except Exception:
                         datetime = dict(date='None')
                     lines.append('UserAccount:\t{}'.format(user_account))
                     lines.append('Date:\t\t{}'.format(datetime['date']))
@@ -929,7 +929,7 @@ class BrukerLoader():
                     phase_enc_dir = get_value(visu_pars, 'VisuAcqImagePhaseEncDir')
                     phase_enc_dir = [phase_enc_dir[0]] if is_all_element_same(phase_enc_dir) else phase_enc_dir
                     num_slice_packs = len(phase_enc_dir)
-                except:
+                except Exception:
                     num_slice_packs = 1
                 matrix_shape = fg_info['matrix_shape']
                 frame_thickness = get_value(visu_pars, 'VisuCoreFrameThickness')
@@ -966,7 +966,7 @@ class BrukerLoader():
                             raise Exception(ERROR_MESSAGES['SlicePacksSlices'])
                         try:
                             num_slices_each_pack = [slices_info_in_pack[0][1] for _ in range(num_slice_packs)]
-                        except:
+                        except Exception:
                             raise Exception(ERROR_MESSAGES['SlicePacksSlices'])
                         if isinstance(slice_distance, list):
                             slice_distances_each_pack = [slice_distance[0] for _ in range(num_slice_packs)]
@@ -1055,7 +1055,7 @@ class BrukerLoader():
                 raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
             try:
                 slice_position = get_origin(slice_position, gradient_orient)
-            except:
+            except Exception:
                 raise Exception(ERROR_MESSAGES['NumSlicePosition'])
 
             omatrix_parser = np.asarray(orient_matrix).reshape([3, 3])

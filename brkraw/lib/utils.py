@@ -275,7 +275,7 @@ def meta_check_express(value, acqp, method, visu_pars):
     try:
         exec("output = {}".format(value['Equation']), globals(), lcm)
         return lcm['output']
-    except:
+    except Exception:
         return None
 
 
@@ -361,7 +361,7 @@ def bids_validation(df, idx, key, val, num_char_allowed, dtype=None):
     if dtype is not None:
         try:
             dtype(val)
-        except:
+        except Exception:
             message = "{} Invalid data type. Value must be {}.".format(loc, dtype.__name__)
             raise InvalidValueInField(message)
     return True
@@ -451,7 +451,7 @@ def mkdir(path):
         os.stat(path)
     except FileNotFoundError or OSError:
         os.makedirs(path)
-    except:
+    except Exception:
         raise UnexpectedError
 
 

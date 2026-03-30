@@ -84,7 +84,7 @@ class PvDatasetBase:
         for scan_id in self.avail_scan_id:
             try:
                 self._avail_recoid[scan_id] = sorted(list(map(lambda x: x.reco_id, self._visu_pars[scan_id])))
-            except:
+            except Exception:
                 self.avail_scan_id.remove(scan_id)
         return self._avail_recoid
 

@@ -117,7 +117,7 @@ class BackupCache:
                 raw_path = os.path.join(raw_dir, raw_dname)
                 garbage = False if arc.is_pvdataset else True
                 crashed = False
-            except:
+            except Exception:
                 self.logging('{} is crashed.'.format(arc_path),
                              'set_arc')
                 arc = None

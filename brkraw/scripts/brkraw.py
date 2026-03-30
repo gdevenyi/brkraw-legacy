@@ -140,7 +140,7 @@ def main():
                         study.save_as(scan_id, reco_id, output_fname, slope=slope, offset=offset)
                         save_meta_files(study, args, scan_id, reco_id, output_fname)
                         print('NifTi file is generated... [{}]'.format(output_fname))
-                    except:
+                    except Exception:
                         print('Conversion failed: ScanID:{}, RecoID:{}'.format(str(scan_id), str(reco_id)))
             else:
                 for scan_id, recos in study._pvobj.avail_reco_id.items():
@@ -156,7 +156,7 @@ def main():
                                 study.save_as(scan_id, reco_id, output_fname, slope=slope, offset=offset)
                                 save_meta_files(study, args, scan_id, reco_id, output_fname)
                                 print('NifTi file is generated... [{}]'.format(output_fname))
-                            except:
+                            except Exception:
                                 print('Conversion failed: ScanID:{}, RecoID:{}'.format(str(scan_id), str(reco_id)))
         else:
             print('{} is not PvDataset.'.format(path))
@@ -220,7 +220,7 @@ def main():
                                 try:
                                     study.save_as(scan_id, reco_id, output_fname, slope=slope, offset=offset)
                                     save_meta_files(study, args, scan_id, reco_id, output_fname)
-                                except:
+                                except Exception:
                                     print('Conversion failed: ScanID:{}, RecoID:{}'.format(str(scan_id), str(reco_id)))
                     print('{} is converted...'.format(raw))
                 else:
@@ -266,7 +266,7 @@ def main():
 
             try:
                 dset = BrukerLoader(dpath)
-            except:
+            except Exception:
                 dset = None
 
             if dset is not None:
@@ -701,7 +701,7 @@ def override_header(pvobj, subjtype, position):
     if position is not None:
         try:
             pvobj.override_position(position)
-        except:
+        except Exception:
             msg = "Unknown position string [{}]. Please check your input option.".format(position) + \
                   "The position variable can be defiend as <BodyPart>_<Side>," + \
                   "available BodyParts are (Head, Foot, Tail) and sides are (Supine, Prone, Left, Right). (e.g. Head_Supine)"
@@ -709,7 +709,7 @@ def override_header(pvobj, subjtype, position):
     if subjtype is not None:
         try:
             pvobj.override_subjtype(subjtype)
-        except:
+        except Exception:
             msg = "Unknown subject type [{}]. Please check your input option.".format(subjtype) + \
                   "available options are (Biped, Quadruped, Phantom, Other, OtherAnimal)"
             raise InvalidApproach(msg)

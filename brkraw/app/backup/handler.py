@@ -472,6 +472,6 @@ class BackupCacheHandler:
                         else:
                             try:
                                 os.rename(tmp_path, arc_path)
-                            except:
+                            except Exception:
                                 print_internal_error(fobj)
                                 raise NotImplementedError
