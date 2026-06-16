@@ -117,8 +117,8 @@ def test_spectroscopic_rejected_cleanly():
 # --------------------------------------------------------------------------- #
 
 def test_non_pvdataset_directory_is_clean():
-    pv360 = _TESTDATA / 'pv360' / 'headers' / 'std_data'
+    pv360 = _TESTDATA / 'pv360' / 'full' / 'std_data'
     if not pv360.is_dir():
-        pytest.skip('pv360/headers/std_data not available')
+        pytest.skip('pv360/full/std_data not available')
     loader = BrukerLoader(str(pv360))   # must not raise
     assert loader.is_pvdataset is False
