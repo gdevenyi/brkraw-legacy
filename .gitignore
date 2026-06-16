@@ -22,3 +22,6 @@ tests/_datasets
 .python-version
 .vscode
 brkraw.log
+manuals/
+testdata/
+FILE_FORMAT.md

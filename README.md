@@ -3,7 +3,7 @@
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/BrkRaw/tutorials/master)
 
 ## BrkRaw: A comprehensive tool to access raw Bruker Biospin MRI data
-#### Version: 0.3.11
+#### Version: 0.4.0
 ### Description
 
 The ‘BrkRaw’ is a python module designed to provide a comprehensive tool to access raw data acquired from 
@@ -21,6 +21,172 @@ It compatible users' convenient objects type ([nibabel](https://nipy.org/nibabel
 without the conversion step. 
 - For the low-level python API, we focused on providing a consistent method to access raw Bruker data including 
 parameter and binary files with the python compatible datatype while keeping the sake of simplicity.
+
+A Bruker *PvDataset* can be supplied either as a study directory or as a `.zip`/`.PvDatasets`
+archive — every command and API call below accepts both.
+
+---
+
+## Installation
+
+Requires Python >= 3.11.
+
+```bash
+pip install brkraw            # installs the `brkraw` and `brk-backup` CLIs
+
+# optional SimpleITK support (get_sitkimg / ITK-compatible output)
+pip install "brkraw[simpleitk]"
+```
+
+From source (development), using [uv](https://docs.astral.sh/uv/):
+
+```bash
+git clone https://github.com/BrkRaw/brkraw.git
+cd brkraw
+uv sync                       # runtime deps, editable install
+uv sync --extra simpleitk     # also install SimpleITK
+uv sync --extra dev           # test/lint tooling (pytest, ruff, bids-validator)
+```
+
+Two command-line tools are installed: **`brkraw`** (inspection/conversion) and
+**`brk-backup`** (archive management).
+
+---
+
+## Command-line usage
+
+### Inspect a dataset — `brkraw info`
+Print study/subject info and a table of scans, reconstructions, dimensions and resolutions.
+
+```bash
+brkraw info <input>           # <input> = study dir or .zip
+```
+
+### Convert one study — `brkraw tonii`
+Convert a single study to NIfTI. Without `-s` every scan/reconstruction is converted.
+
+```bash
+brkraw tonii <input>                       # convert all scans
+brkraw tonii <input> -s 2 -r 1 -o out      # only ScanID 2, RecoID 1 -> out.nii.gz
+```
+
+| Option | Description |
+|--------|-------------|
+| `-o, --output <name>` | Output filename (without extension) / prefix |
+| `-s, --scanid <id>` | Convert a single scan |
+| `-r, --recoid <id>` | Reconstruction id (default 1) |
+| `-t, --subjecttype <T>` | Override subject type (`Biped`, `Quadruped`, `Phantom`, `Other`, `OtherAnimal`) |
+| `-p, --position <P>` | Override position, `<BodyPart>_<Side>` (e.g. `Head_Supine`) |
+| `--ignore-slope` / `--ignore-offset` / `--ignore-rescale` | Drop scaling values from the NIfTI header |
+| `--ignore-localizer` | Skip localizer/tripilot scans (on by default for `tonii`) |
+
+Non-image scans (spectroscopy, etc.) and unclassifiable scans are skipped with a clear message
+rather than producing invalid output. Diffusion scans also emit FSL-style `.bval`/`.bvec`.
+
+### Batch convert — `brkraw tonii_all`
+Convert **every** study under a parent directory into a simple
+`sub-<id>/ses-<id>/<datatype>/` tree (`anat`/`func`/`dwi`/`etc`).
+
+```bash
+brkraw tonii_all <parent_dir> -o <output_dir>
+```
+
+Accepts the same `-t/-p/--ignore-*` options as `tonii`.
+
+### Convert to BIDS — `brkraw bids_helper` + `bids_convert`
+Produce a spec-compliant [BIDS](https://bids.neuroimaging.io) (v1.10) dataset in two steps:
+
+```bash
+# 1. Generate an editable datasheet (+ JSON metadata template with -j)
+brkraw bids_helper <parent_dir> bids_map -j
+
+# 2. Review/fill bids_map.csv (subject, session, datatype, suffix, task, acq, run, ...),
+#    then convert using the datasheet and metadata template
+brkraw bids_convert <parent_dir> bids_map.csv -j bids_map.json -o <bids_output>
+```
+
+`bids_helper` options: `-f csv|tsv` (datasheet format), `-j` (also write the metadata
+template), `-s` (swap subject/study IDs), `-t` (swap session/study ID). `bids_convert`
+accepts `-j`, `-o`, and the same `-t/-p/--ignore-*` overrides as `tonii`.
+
+The output is validator-clean: correct filenames/entity ordering, JSON sidecars (with
+`TaskName`, units, etc.), `dataset_description.json` (`BIDSVersion` 1.10 + `GeneratedBy`),
+`participants.tsv`/`.json`, `README`, `CHANGES`, and a `.bidsignore`. Validate with the
+official [bids-validator](https://github.com/bids-standard/bids-validator). Spectroscopic and
+unclassifiable scans are skipped rather than written as invalid datatypes.
+
+### Archive management — `brk-backup`
+Track and archive raw datasets against a backup location.
+
+```bash
+brk-backup archived <raw_path> <archived_path>   # report archive status
+brk-backup review   <raw_path> <archived_path>   # show conflicts before archiving
+brk-backup backup   <raw_path> <archived_path>   # archive raw data (run after review)
+brk-backup clean    <raw_path> <archived_path>   # remove problematic archives
+```
+
+Add `-l/--logging` to write a log file.
+
+---
+
+## Python API
+
+```python
+import brkraw
+
+study = brkraw.load('path/to/study_or_archive.zip')   # == BrukerLoader(path)
+
+study.is_pvdataset          # True if a valid PvDataset
+study.num_scans             # number of scans
+study.info()                # print the same summary as `brkraw info`
+
+study.pvobj.avail_scan_id   # e.g. [1, 2, 3, ...]
+study.pvobj.avail_reco_id   # {scan_id: [reco_id, ...]}
+study.pvobj.subj_id, study.pvobj.study_id, study.pvobj.session_id
+```
+
+### Images (high-level)
+```python
+# nibabel object, orientation + affine preserved
+nii = study.get_niftiobj(scan_id=2, reco_id=1)
+
+# write to disk (.nii.gz); save_as is an alias of save_nifti
+study.save_nifti(2, 1, 'output_name', dir='.')
+study.save_as(2, 1, 'output_name')
+
+# raw ndarray and 4x4 affine
+data   = study.get_dataobj(2, 1)
+affine = study.get_affine(2, 1)
+
+# SimpleITK image (requires the 'simpleitk' extra)
+img = study.get_sitkimg(2, 1)
+```
+Multi-slice-package or multi-echo scans return a **list** of images; `save_nifti` writes
+them as `name-01.nii.gz`, `name-02.nii.gz`, ....
+
+### Parameters (low-level)
+```python
+method = study.get_method(2)            # method file
+acqp   = study.get_acqp(2)              # acqp file
+visu   = study.get_visu_pars(2, 1)      # visu_pars (per reconstruction)
+
+method.parameters['Method']             # access any parameter by key
+acqp.parameters['ACQ_size']
+```
+
+### Diffusion
+```python
+bvals, bvecs = study.get_bdata(scan_id)     # FSL-style arrays
+study.save_bdata(scan_id, 'dwi', dir='.')   # writes dwi.bval / dwi.bvec
+```
+
+### Overrides
+```python
+study.override_subjtype('Quadruped')        # fix mis-set subject type
+study.override_position('Head_Supine')       # fix mis-set position
+```
+
+---
 
 #### Conversion reliability
 ![Robust Orientation](imgs/bruker2nifti_qa.png)

@@ -46,8 +46,31 @@ def load_param(stringlist):
     return params, param_addresses, stringlist
 
 
+# Sentinels used to hide '(', ')' and ',' that occur *inside* JCAMP-DX string
+# literals (<...>) so the struct/array tokenizer does not treat them as
+# delimiters. See FILE_FORMAT.md 2.2: strings are opaque, enclosed in <...>.
+_MASK = (('(', '\x01'), (')', '\x02'), (',', '\x03'))
+
+
+def _mask_string_literals(data):
+    """Replace delimiter chars occurring inside <...> literals with sentinels."""
+    def repl(match):
+        token = match.group(0)
+        for ch, sentinel in _MASK:
+            token = token.replace(ch, sentinel)
+        return token
+    return re.sub(r'<[^<>]*>', repl, data)
+
+
+def _unmask_delimiters(string):
+    """Restore sentinels back to their original delimiter characters."""
+    for ch, sentinel in _MASK:
+        string = string.replace(sentinel, ch)
+    return string
+
+
 def convert_string_to(string):
-    string = string.strip()
+    string = _unmask_delimiters(string.strip())
     if re.match(ptrn_string, string):
         string = re.sub(ptrn_string, r'\g<string>', string).strip()
     if not string:
@@ -74,7 +97,11 @@ def convert_data_to(data, shape):
             else:
                 data = is_bisarray
         else:
-            
+            # Hide '(', ')' and ',' inside <...> literals so a free-text comment
+            # such as <T2 relaxation: y=A+C*exp(-t/T2)> does not corrupt struct
+            # tokenization. Sentinels are restored by convert_string_to.
+            data = _mask_string_literals(data)
+
             # [20210820] Add-paravision 360 related.
             m_all = re.findall(ptrn_at_array, data)
             m_all = set(m_all)
@@ -191,23 +218,18 @@ def meta_get_value(value, acqp, method, visu_pars):
         else:
             parser = dict()
             for k, v in value.items():
-                parser[k] = meta_get_value(v, acqp, method, visu_pars)
-            return parser
+                sub = meta_get_value(v, acqp, method, visu_pars)
+                if sub is not None:
+                    parser[k] = sub
+            # Drop the whole group when nothing resolved, so empty objects are omitted.
+            return parser if parser else None
     elif isinstance(value, list):
-        parser = []
-        max_index = len(value) - 1
-        for i, vi in enumerate(value):
+        # Fallback list: try each candidate in order, return the first resolved value.
+        for vi in value:
             val = meta_get_value(vi, acqp, method, visu_pars)
             if val is not None:
-                if val == vi:
-                    if i == max_index:
-                        parser.append(val)
-                else:
-                    parser.append(val)
-        if len(parser) > 0:
-            return parser[0]
-        else:
-            return None
+                return val
+        return None
     else:
         return value
 
@@ -285,7 +307,9 @@ def meta_check_source(key_string, acqp, method, visu_pars):
     for i, ans in enumerate(key_exist):
         if ans:
             return get_value(pool[i], key_string)
-    return key_string
+    # Parameter absent from every source: report missing so the field is omitted
+    # rather than echoing the Bruker parameter name as the metadata value.
+    return None
 
 
 def yes_or_no(question):
@@ -395,8 +419,12 @@ def get_bids_ref_obj(ref_path, row):
     return ref
 
 
-def build_bids_json(dset, row, fname, json_path, slope=False, offset=False):
+def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, intended_for=None):
     import pandas as pd
+
+    # TaskName is required for func and must equal the task- entity label.
+    task_name = row.task if (pd.notnull(row.task) and re.search('func', str(row.DataType),
+                                                                re.IGNORECASE)) else None
 
     if pd.notnull(row.Start) or pd.notnull(row.End):
         crop = [int(row.Start), int(row.End)]
@@ -412,7 +440,7 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False):
             if json_path:
                 ref = get_bids_ref_obj(json_path, row)
                 dset.save_json(row.ScanID, row.RecoID, currentFileName, dir=row.Dir,
-                               metadata=ref, condition=['me', echo])
+                               metadata=ref, condition=['me', echo], task_name=task_name)
     else:
         fname = '{}_{}'.format(fname, row.modality)
         dset.save_as(row.ScanID, row.RecoID, fname, dir=row.Dir, crop=crop, slope=slope, offset=offset)
@@ -429,7 +457,8 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False):
                 pass  # magnitude data does not require JSON (BIDS)
             else:
                 dset.save_json(row.ScanID, row.RecoID, fname, dir=row.Dir,
-                               metadata=ref, condition=condition)
+                               metadata=ref, condition=condition,
+                               task_name=task_name, intended_for=intended_for)
 
 
 def encdir_code_converter(enc_param):

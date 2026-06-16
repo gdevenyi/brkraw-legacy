@@ -173,7 +173,10 @@ class PvDatasetDir(PvDatasetBase):
                 else:
                     pass
             elif 'method' in files and 'acqp' in files:
-                if len(root.split(os.sep)) == root_path_fregs + 1:
+                # Scans can only be anchored once the study root (subject file)
+                # is located. Without it this is not a valid single PvDataset.
+                if root_path_fregs is not None and \
+                        len(root.split(os.sep)) == root_path_fregs + 1:
                     scan_id = os.path.basename(root)
                     if scan_id.isdigit():
                         with open(os.path.join(root, 'method'), 'r') as f:
@@ -192,7 +195,8 @@ class PvDatasetDir(PvDatasetBase):
                             self._traj[int(scan_id)] = traj_path
             elif '2dseq' in files and 'visu_pars' in files:
                 path_freg = root.split(os.sep)
-                if len(root.split(os.sep)) == root_path_fregs + 3:
+                if root_path_fregs is not None and \
+                        len(root.split(os.sep)) == root_path_fregs + 3:
                     scan_id = path_freg[-3]
                     reco_id = path_freg[-1]
                     if scan_id.isdigit() and reco_id.isdigit():

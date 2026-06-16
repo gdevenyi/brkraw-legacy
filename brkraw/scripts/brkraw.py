@@ -6,8 +6,9 @@ import argparse
 import os
 import re
 import sys
+import warnings
 
-_supporting_bids_ver = '1.2.2'
+_supporting_bids_ver = '1.10.0'
 
 
 def main():
@@ -141,8 +142,8 @@ def main():
                         study.save_as(scan_id, reco_id, output_fname, slope=slope, offset=offset)
                         save_meta_files(study, args, scan_id, reco_id, output_fname)
                         print('NifTi file is generated... [{}]'.format(output_fname))
-                    except Exception:
-                        print('Conversion failed: ScanID:{}, RecoID:{}'.format(str(scan_id), str(reco_id)))
+                    except Exception as e:
+                        report_conversion_error(scan_id, reco_id, e)
             else:
                 for scan_id, recos in study._pvobj.avail_reco_id.items():
                     acqpars  = study.get_acqp(int(scan_id))
@@ -157,8 +158,8 @@ def main():
                                 study.save_as(scan_id, reco_id, output_fname, slope=slope, offset=offset)
                                 save_meta_files(study, args, scan_id, reco_id, output_fname)
                                 print('NifTi file is generated... [{}]'.format(output_fname))
-                            except Exception:
-                                print('Conversion failed: ScanID:{}, RecoID:{}'.format(str(scan_id), str(reco_id)))
+                            except Exception as e:
+                                report_conversion_error(scan_id, reco_id, e)
         else:
             print('{} is not PvDataset.'.format(path))
 
@@ -221,8 +222,8 @@ def main():
                                 try:
                                     study.save_as(scan_id, reco_id, output_fname, slope=slope, offset=offset)
                                     save_meta_files(study, args, scan_id, reco_id, output_fname)
-                                except Exception:
-                                    print('Conversion failed: ScanID:{}, RecoID:{}'.format(str(scan_id), str(reco_id)))
+                                except Exception as e:
+                                    report_conversion_error(scan_id, reco_id, e)
                     print('{} is converted...'.format(raw))
                 else:
                     print('{} does not contains any scan data to convert...'.format(raw))
@@ -238,7 +239,6 @@ def main():
         swap_sess = args.sess
 
         if swap_id and swap_sess:
-            import warnings
             warnings.warn('\nBoth switch subject/study IDs and switch session/study ID options are on. You probably do not want this!\n')
 
         # [220202] for back compatibility
@@ -344,7 +344,6 @@ def main():
 
     elif args.function == 'bids_convert':
         import pandas as pd
-        import numpy as np
         from ..lib.utils import build_bids_json, bids_validation
         
         pd.options.mode.chained_assignment = None
@@ -401,9 +400,11 @@ def main():
                     rawdata = pvobj.path
                     filtered_dset = df[df['RawData'].isin([rawdata])].reset_index()
 
-                    # add Filename and Dir colomn
-                    filtered_dset.loc[:, 'FileName'] = [np.nan] * len(filtered_dset)
-                    filtered_dset.loc[:, 'Dir'] = [np.nan] * len(filtered_dset)
+                    # add Filename and Dir columns (object dtype to hold path strings)
+                    filtered_dset['FileName'] = pd.Series([None] * len(filtered_dset),
+                                                          index=filtered_dset.index, dtype=object)
+                    filtered_dset['Dir'] = pd.Series([None] * len(filtered_dset),
+                                                     index=filtered_dset.index, dtype=object)
 
                     if len(filtered_dset):
                         subj_id = list(set(filtered_dset['SubjID']))[0]
@@ -419,6 +420,14 @@ def main():
                         print('Converting {}...'.format(dname))
 
                         for i, row in filtered_dset.iterrows():
+                            if pd.isnull(row.FileName) or pd.isnull(row.modality):
+                                # Unclassified scan (no valid BIDS suffix): skip it so
+                                # the validated tree never gets an invalid datatype/suffix.
+                                warnings.warn('ScanID:[{}] could not be mapped to a valid BIDS '
+                                              'datatype/suffix and was skipped. Set DataType and '
+                                              'modality in the datasheet to convert it.'
+                                              ''.format(row.ScanID))
+                                continue
                             temp_fname = '{}_{}'.format(row.FileName, row.modality)
                             if temp_fname not in list_tested_fn:
                                 # filter the DataFrame that has same filename (updated without run)
@@ -456,6 +465,14 @@ def main():
         parser.print_help()
 
 
+def report_conversion_error(scan_id, reco_id, error):
+    """Print a skip notice for non-image data, or a failure notice otherwise."""
+    if 'non-image data' in str(error):
+        print('Skipped (non-image data): ScanID:{}, RecoID:{}'.format(scan_id, reco_id))
+    else:
+        print('Conversion failed: ScanID:{}, RecoID:{} ({})'.format(scan_id, reco_id, error))
+
+
 def cleanSubjectID(subj_id):
     """To replace the underscore in subject id.
     Args:
@@ -464,7 +481,6 @@ def cleanSubjectID(subj_id):
         str: the replaced subject id.
     """
 
-    import warnings
 
     subj_id = str(subj_id)
     
@@ -491,7 +507,6 @@ def cleanSessionID(sess_id):
         str: the replaced session id.
     """
 
-    import warnings
     
     sess_id = str(sess_id)
 
@@ -558,22 +573,41 @@ def generateModalityAgnosticFiles(root_path, json_fname):
     Returns:
         nothing: just generate files.
     """
-    data_des = 'dataset_description.json'
-    readme = 'README'
-    # why open use only the current folder and os.path not?
+    import json
+    import datetime
+    from copy import deepcopy
+    from ..lib.reference import DATASET_DESC_REF
+
+    data_des = os.path.join(root_path, 'dataset_description.json')
+    readme = os.path.join(root_path, 'README')
+    changes = os.path.join(root_path, 'CHANGES')
+    bidsignore = os.path.join(root_path, '.bidsignore')
+
     if not os.path.exists(data_des):
-        with open(os.path.join(root_path, 'dataset_description.json'), 'w') as f:
-            import json
-            import datetime
-            from ..lib.reference import DATASET_DESC_REF
-            json.dump(DATASET_DESC_REF, f, indent=4)
+        desc = deepcopy(DATASET_DESC_REF)
+        # Record BrkRaw as the generator (BIDS recommended provenance).
+        desc['GeneratedBy'] = [dict(Name='BrkRaw',
+                                    Version=__version__,
+                                    CodeURL='https://github.com/BrkRaw/brkraw')]
+        # Drop empty placeholders so the sidecar only ships meaningful values.
+        desc = {k: v for k, v in desc.items() if v not in ('', [], {})}
+        with open(data_des, 'w') as f:
+            json.dump(desc, f, indent=4)
     if not os.path.exists(readme):
-        with open(os.path.join(root_path, readme), 'w') as f:
-            # I do not know why json_fname here.
-            f.write('This dataset has been converted using BrkRaw (v{})'
-                    'at {}.\n'.format(json_fname, datetime.datetime.now()))
-            f.write('## How to cite?\n - https://doi.org/10.5281/zenodo.3818615\n')
-    
+        with open(readme, 'w') as f:
+            f.write('This dataset was converted using BrkRaw (v{}) on {}.\n'
+                    ''.format(__version__, datetime.datetime.now().isoformat()))
+            f.write('\n## How to cite?\n - https://doi.org/10.5281/zenodo.3818615\n')
+    if not os.path.exists(changes):
+        with open(changes, 'w') as f:
+            f.write('1.0.0 {}\n - Dataset created with BrkRaw v{}.\n'
+                    ''.format(datetime.date.today().isoformat(), __version__))
+    if not os.path.exists(bidsignore):
+        with open(bidsignore, 'w') as f:
+            # Unclassified Bruker scans (if any are placed here manually) are excluded
+            # from validation rather than emitted as an invalid BIDS datatype.
+            f.write('etc/\n**/etc/\n')
+
     # https://bids-specification.readthedocs.io/en/stable/03-modality-agnostic-files.html
     # participant.tsv file. if not exist, create it, and append. if need tab use \t
     participantsTsvPath = os.path.join(root_path, 'participants.tsv')
@@ -600,87 +634,66 @@ def generateModalityAgnosticFiles(root_path, json_fname):
 
 
 
-def createFolderTree(include_session, row, root_path, subj_code):
-    """To create participant (and session if include_session) folder.
-    Args:
-        include_session (bool): include_session.
-        row (obj): a (panadas) row of data containing SessID and DataType.
-        root_path (str): the root path of output folder
-        subj_code (str): subject or participant folder name
-    Returns:
-        list: first 0 element is dtype_path, second 1 is fname.
-    """
-    if include_session:
-        # If session included, make session dir
-        sess_code = 'ses-{}'.format(row.SessID)
-        subj_path = os.path.join(root_path, subj_code)
-        mkdir(subj_path)
-        subj_path = os.path.join(subj_path, sess_code)
-        mkdir(subj_path)
-        # add session info to filename as well
-        fname = '{}_{}'.format(subj_code, sess_code)
-    else:
-        subj_path = os.path.join(root_path, subj_code)
-        mkdir(subj_path)
-        fname = '{}'.format(subj_code)
-    
-    datatype = row.DataType
-    dtype_path = os.path.join(subj_path, datatype)
-    mkdir(dtype_path)
-
-    return [dtype_path, fname]
-
-
 def completeFieldsCreateFolders (df, filtered_dset, dset, multi_session, root_path, subj_code):
-    """To complete the dataframe fields and create output folders. [too many parameters]
+    """Resolve BIDS path, directory and suffix for each scan and create the folders.
+
+    Filenames, entity ordering and suffix validity are delegated to the BIDS schema
+    via ``brkraw.lib.bids`` rather than assembled by hand here.  ``FileName`` holds the
+    entity prefix (everything up to but excluding ``run``/``echo`` and the suffix); the
+    converter appends those downstream so they land in spec-correct positions.
+
     Args:
-        df (dataframe): original pandas dataframe, not sure whether it can replaced by filtered_dset (someone has to figure it out)
-        filtered_dset (dataframe): filtered pandas dataframe
+        df (dataframe): original pandas dataframe (used for friendly datasheet errors)
+        filtered_dset (dataframe): filtered pandas dataframe for one raw dataset
         dset (object): BrukerLoader(dpath) object
-        multi_session (bool): multi_session.
+        multi_session (bool): whether the dataset uses sessions
         root_path (str): the root path of output folder
-        subj_code (str): subject or participant folder name
+        subj_code (str): subject folder name, e.g. ``sub-001``
     Returns:
         dataframe: the completed filtered_dset.
     """
     import pandas as pd
+    import numpy as np
+    from ..lib import bids
     from ..lib.utils import bids_validation
 
-    # iterrows to create folder tree, add to filtered_dset fname, dtype_path, and modality
+    subj_id = subj_code.replace('sub-', '', 1)
+    # modality may be assigned suffix strings below; ensure it can hold them.
+    filtered_dset['modality'] = filtered_dset['modality'].astype(object)
+
     for i, row in filtered_dset.iterrows():
-        dtype_path, fname = createFolderTree(multi_session, row, root_path, subj_code)
-        if pd.notnull(row.task):
-            if bids_validation(df, i, 'task', row.task, 10):
-                fname = '{}_task-{}'.format(fname, row.task)
-        if pd.notnull(row.acq):
-            if bids_validation(df, i, 'acq', row.acq, 10):
-                fname = '{}_acq-{}'.format(fname, row.acq)
-        if pd.notnull(row.ce):
-            if bids_validation(df, i, 'ce', row.ce, 5):
-                fname = '{}_ce-{}'.format(fname, row.ce)
-        if pd.notnull(row.dir):
-            if bids_validation(df, i, 'dir', row.dir, 2):
-                fname = '{}_dir-{}'.format(fname, row.dir)
-        if pd.notnull(row.rec):
-            if bids_validation(df, i, 'rec', row.rec, 2):
-                fname = '{}_rec-{}'.format(fname, row.rec)
-        filtered_dset.loc[i, 'FileName'] = fname
-        filtered_dset.loc[i, 'Dir'] = dtype_path
+        # Resolve the BIDS suffix (datasheet 'modality'); auto-infer when blank.
         if pd.isnull(row.modality):
             method = dset.get_method(row.ScanID).parameters['Method']
-            if row.DataType == 'anat':
-                if re.search('flash', method, re.IGNORECASE):
-                    modality = 'FLASH'
-                elif re.search('rare', method, re.IGNORECASE):
-                    modality = 'T2w'
-                else:
-                    modality = '{}'.format(method.split(':')[-1])
-            else:
-                modality = '{}'.format(method.split(':')[-1])
-            filtered_dset.loc[i, 'modality'] = modality
+            suffix = bids.default_suffix(row.DataType, method)
+            if suffix is None:
+                # Unknown method: cannot emit a valid BIDS suffix. Leave modality
+                # blank; the converter routes these scans out of the validated tree.
+                filtered_dset.loc[i, 'modality'] = np.nan
+                continue
+            filtered_dset.loc[i, 'modality'] = suffix
         else:
-            bids_validation(df, i, 'modality', row.modality, 10, dtype=str)
-    
+            bids_validation(df, i, 'modality', row.modality, 30, dtype=str)
+            suffix = row.modality
+        bids.validate_suffix(row.DataType, suffix)
+
+        # Collect entity labels from the datasheet (run/echo handled downstream).
+        entities = dict(subject=subj_id)
+        if multi_session:
+            entities['session'] = row.SessID
+        for col, ent in (('task', 'task'), ('acq', 'acquisition'), ('ce', 'ceagent'),
+                         ('rec', 'reconstruction'), ('dir', 'direction')):
+            val = getattr(row, col)
+            if pd.notnull(val):
+                bids_validation(df, i, col, val, 64)
+                entities[ent] = val
+
+        rel_dir, prefix = bids.build_prefix(entities, row.DataType)
+        dtype_path = os.path.join(root_path, *rel_dir.split('/'))
+        mkdir(dtype_path)
+        filtered_dset.loc[i, 'FileName'] = prefix
+        filtered_dset.loc[i, 'Dir'] = dtype_path
+
     return filtered_dset
 
 

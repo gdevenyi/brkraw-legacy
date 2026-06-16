@@ -21,6 +21,21 @@ class DataType(enum.Enum):
     NIFTI1 = 2
 
 
+def _bids_fieldmap_units(raw_units):
+    """Map a Bruker ``VisuCoreDataUnits`` value to a valid BIDS fieldmap unit.
+
+    BIDS requires fieldmap ``Units`` to be one of ``Hz``, ``rad/s`` or ``T``.
+    Returns the matching canonical unit, or ``None`` when no safe mapping exists.
+    """
+    if isinstance(raw_units, (list, tuple)):
+        raw_units = raw_units[0] if len(raw_units) else None
+    if raw_units is None:
+        return None
+    token = str(raw_units).strip().strip('[]').lower()
+    mapping = {'hz': 'Hz', 'rad/s': 'rad/s', 'rad/sec': 'rad/s', 'rads': 'rad/s', 't': 'T'}
+    return mapping.get(token)
+
+
 def load(path):
     path = pathlib.Path(path)
     if os.path.isdir(path):
@@ -198,7 +213,12 @@ class BrukerLoader():
             dataobj
         """
         visu_pars   = self._get_visu_pars(scan_id, reco_id)
-        dim         = self._get_dim_info(visu_pars)[0]
+        dim, dim_type = self._get_dim_info(visu_pars)
+        if dim_type != 'spatial_only':
+            # Spectroscopic / non-image data cannot be represented as a NIfTI image.
+            raise UnexpectedError('ScanID:{} RecoID:{} is non-image data '
+                                  '({}); skipped for NIfTI conversion.'
+                                  ''.format(scan_id, reco_id, dim_type))
         fg_info     = self._get_frame_group_info(visu_pars)
         matrix_size = self.get_matrix_size(scan_id, reco_id)
         dataobj = self._get_dataobj(scan_id, reco_id)
@@ -271,11 +291,15 @@ class BrukerLoader():
                         dataobj = np.swapaxes(dataobj, 2, -1)
 
             elif group_id[0] in ['FG_DIFFUSION', 'FG_DTI', 'FG_MOVIE', 'FG_COIL',
-                                 'FG_CYCLE', 'FG_COMPLEX', 'FG_CARDIAC_MOVIE']:
+                                 'FG_CYCLE', 'FG_COMPLEX', 'FG_CARDIAC_MOVIE',
+                                 'FG_FLOW', 'FG_IRMODE', 'FG_ISA']:
                 dataobj = swap_slice_axis(group_id, dataobj)
             else:
-                # the output data will have default matrix shape and order.
-                warnings.warn('Unexpected frame group combination;{}'.format(ISSUE_REPORT), UserWarning)
+                # Unrecognized leading frame group: still place any slice dimension
+                # on the third axis so the spatial layout is correct, and warn.
+                warnings.warn('Unexpected frame group combination ({});{}'
+                              ''.format(group_id, ISSUE_REPORT), UserWarning)
+                dataobj = swap_slice_axis(group_id, dataobj)
         return dataobj
 
     def get_fid(self, scan_id):
@@ -305,7 +329,9 @@ class BrukerLoader():
         fg_info = self._get_frame_group_info(visu_pars)
         group_id = fg_info['group_id']
         if 'FG_ECHO' in group_id and 'FieldMap' not in fg_info['group_comment']:  #FieldMap will be treated different
-            return fg_info['matrix_shape'][group_id.index('FG_ECHO')]  # return number of echos
+            num_echos = fg_info['matrix_shape'][group_id.index('FG_ECHO')]
+            # a single echo in an FG_ECHO group is not multi-echo data
+            return num_echos if num_echos > 1 else False
         else:
             return False
 
@@ -324,6 +350,12 @@ class BrukerLoader():
         """
         from nibabel import Nifti1Image
         visu_pars = self._get_visu_pars(scan_id, reco_id)
+        if self._get_dim_info(visu_pars)[1] != 'spatial_only':
+            # Spectroscopic / non-image data cannot be represented as a NIfTI image.
+            raise UnexpectedError('ScanID:{} RecoID:{} is non-image data ({}); '
+                                  'skipped for NIfTI conversion.'
+                                  ''.format(scan_id, reco_id,
+                                            self._get_dim_info(visu_pars)[1]))
         method = self._method[scan_id]
         affine = self._get_affine(visu_pars, method)
 
@@ -340,9 +372,10 @@ class BrukerLoader():
             slice_info = self._get_slice_info(visu_pars)
             num_slice_packs = slice_info['num_slice_packs']
 
+            num_slices_each_pack = slice_info['num_slices_each_pack']
             for spack_idx in range(num_slice_packs):
-                num_slices_each_pack = slice_info['num_slices_each_pack']
-                start = int(spack_idx * num_slices_each_pack[spack_idx])
+                # cumulative offset of preceding packs (packs may differ in size)
+                start = sum(num_slices_each_pack[:spack_idx])
                 end = start + num_slices_each_pack[spack_idx]
                 seg_imgobj = imgobj[..., start:end]
                 niiobj = Nifti1Image(seg_imgobj, affine[spack_idx])
@@ -550,7 +583,8 @@ class BrukerLoader():
             json_obj[k] = val
         return json_obj
 
-    def save_json(self, scan_id, reco_id, filename, dir='./', metadata=None, condition=None):
+    def save_json(self, scan_id, reco_id, filename, dir='./', metadata=None, condition=None,
+                  task_name=None, intended_for=None):
         json_obj = self._parse_json(scan_id, reco_id, metadata)
         if condition is not None:
             code, idx = condition
@@ -563,16 +597,28 @@ class BrukerLoader():
                         raise InvalidApproach('SingleTE data')
             elif code == 'fm':
                 visu_pars = self._get_visu_pars(scan_id, reco_id)
-                json_obj['Units'] = get_value(visu_pars, 'VisuCoreDataUnits')[0]
-                json_obj['IntendFor'] = ["func/*_bold.nii.gz"]
+                units = _bids_fieldmap_units(get_value(visu_pars, 'VisuCoreDataUnits'))
+                if units is not None:
+                    json_obj['Units'] = units
+                else:
+                    warnings.warn("Could not map Bruker 'VisuCoreDataUnits' to a valid BIDS "
+                                  "fieldmap unit (Hz, rad/s, T); 'Units' omitted from {}.json. "
+                                  "Set it manually for a valid fieldmap.".format(filename))
+                # IntendedFor (BIDS recommended): subject-relative paths to the target
+                # images, set by the converter. Glob patterns are not valid BIDS.
+                if intended_for:
+                    json_obj['IntendedFor'] = list(intended_for)
             else:
                 raise InvalidApproach('Invalid datatype code for json creation')
 
-        # remove all null fields
-        for k, v in json_obj.items():
-            if v is None:
-                json_obj[k] = 'Value was not specified'
-            
+        # TaskName is REQUIRED for func and must equal the task- entity label.
+        if task_name is not None:
+            json_obj['TaskName'] = task_name
+
+        # Omit unmapped fields entirely rather than writing placeholder strings;
+        # BIDS sidecars should only contain known values.
+        json_obj = {k: v for k, v in json_obj.items() if v is not None}
+
         # RepetitionTime is mutually exclusive with VolumeTiming, here default with RepetitionTime. 
         # https://bids-specification.readthedocs.io/en/latest/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#required-fields
         # To use VolumeTiming, remove the RepetitionTime item in .json file generated from bids_helper.
@@ -650,6 +696,11 @@ class BrukerLoader():
         if io_handler is None:
             import sys
             io_handler = sys.stdout
+
+        if not self._is_pvdataset:
+            io_handler.write("'{}' is not a valid PvDataset "
+                             "(no subject file or no scans found).\n".format(self._pvobj.path))
+            return
 
         pvobj = self._pvobj
         user_account = pvobj.user_account
@@ -865,11 +916,16 @@ class BrukerLoader():
         dim      = get_value(visu_pars, 'VisuCoreDim')
         dim_desc = get_value(visu_pars, 'VisuCoreDimDesc')
 
+        # VisuCoreDimDesc may be a single string (1D) or a list; normalise.
+        if isinstance(dim_desc, str):
+            dim_desc = [dim_desc]
         if not all(map(lambda x: x == 'spatial', dim_desc)):
             if 'spectroscopic' in dim_desc:
                 return dim, 'contain_spectroscopic'  # spectroscopic data
             elif 'temporal' in dim_desc:
                 return dim, 'contain_temporal'  # unexpected data
+            else:
+                return dim, 'contain_other'  # other non-image content
         else:
             return dim, 'spatial_only'
 
@@ -966,7 +1022,10 @@ class BrukerLoader():
                         if num_slice_frames > 2:
                             raise Exception(ERROR_MESSAGES['SlicePacksSlices'])
                         try:
-                            num_slices_each_pack = [slices_info_in_pack[0][1] for _ in range(num_slice_packs)]
+                            # VisuCoreSlicePacksSlices holds [first_slice_index, count]
+                            # per package; use each package's own count.
+                            num_slices_each_pack = [slices_info_in_pack[p][1]
+                                                    for p in range(num_slice_packs)]
                         except Exception:
                             raise Exception(ERROR_MESSAGES['SlicePacksSlices'])
                         if isinstance(slice_distance, list):
@@ -1016,24 +1075,26 @@ class BrukerLoader():
             num_slice_packs = slice_info['num_slice_packs']
             if num_ori_mat != num_slice_packs:
                 mpms = True
-                if not num_slice_packs % num_ori_mat:
+                # multi slice packs with multiple slices each: one orientation
+                # matrix per slice. Group by each pack's actual slice count
+                # (packs may differ in size) and require a consistent orientation
+                # within a pack.
+                num_slices_each_pack = slice_info['num_slices_each_pack']
+                if sum(num_slices_each_pack) != num_ori_mat:
                     raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
-                else:
-                    # multi slice packs and multi slices, each slice packs must be identical on element.
-                    # TODO: If error occurred it means the existing of exception for this.
-                    cut_idx = 0
-                    num_slices = int(num_ori_mat / num_slice_packs)
-                    _orient_matrix = []
-                    _slice_position = []
-                    for ci in range(num_slice_packs):
-                        om_set = orient_matrix[cut_idx:cut_idx + num_slices]
-                        sp_set = slice_position[cut_idx:cut_idx + num_slices]
-                        if is_all_element_same(om_set):
-                            _orient_matrix.append(om_set[0])
-                            _slice_position.append(sp_set)
-                        else:
-                            raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
-                        cut_idx += num_slices
+                cut_idx = 0
+                _orient_matrix = []
+                _slice_position = []
+                for ci in range(num_slice_packs):
+                    n_slices = num_slices_each_pack[ci]
+                    om_set = orient_matrix[cut_idx:cut_idx + n_slices]
+                    sp_set = slice_position[cut_idx:cut_idx + n_slices]
+                    if is_all_element_same(om_set):
+                        _orient_matrix.append(om_set[0])
+                        _slice_position.append(sp_set)
+                    else:
+                        raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
+                    cut_idx += n_slices
                 orient_matrix = _orient_matrix
                 slice_position = _slice_position
             else:
@@ -1108,7 +1169,7 @@ class BrukerLoader():
             rmat = orient_info['orient_matrix']
             pose = orient_info['volume_position']
             if is_reversed:
-                distance = slice_info['slice_distances_each_pack']
+                distance = slice_info['slice_distances_each_pack'][0]
                 pose = reversed_pose_correction(pose, rmat, distance)
             affine = build_affine_from_orient_info(resol, rmat, pose,
                                                    subj_pose, subj_type,
@@ -1128,7 +1189,10 @@ class BrukerLoader():
         num_slice_packs     = slice_info['num_slice_packs']
 
         if num_slice_packs > 1:
-            if is_all_element_same(matrix_size):
+            # Slice packages may hold different slice counts but must share the
+            # in-plane matrix; stack them along the slice axis.
+            inplane = [tuple(m[:-1]) for m in matrix_size]
+            if is_all_element_same(inplane):
                 matrix_size         = list(matrix_size[0])
                 total_num_slices    = sum(slice_info['num_slices_each_pack'])
                 matrix_size[-1]     = total_num_slices

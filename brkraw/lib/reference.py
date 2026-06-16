@@ -46,7 +46,7 @@ ERROR_MESSAGES = {'ImportError'         : '[{}] is not recognized as ParavisionD
                   'NotIntegrated'       : 'not integrated method, please contact developer.'
                   }
 
-# BIDS v1.2.2
+# BIDS v1.10.0
 # Below is the list of METADATA keywords that BIDS recommended
 COMMON_METADATA_FIELD = \
     dict(Recommended    = [  # SCANNER_HARDWARE
@@ -120,7 +120,8 @@ COMMON_METADATA_FIELD = \
 COMMON_META_REF = \
     dict(Manufacturer                   = 'VisuManufacturer',
          ManufacturersModelName         = 'VisuStation',
-         DeviceSerialNumber             = 'VisuSystemOrderNumber',
+         DeviceSerialNumber             = dict(SN       = 'VisuSystemOrderNumber',
+                                               Equation = 'str(SN)'),  # BIDS type: string
          StationName                    = 'VisuStation',
          SoftwareVersion                = 'VisuAcqSoftwareVersion',
          MagneticFieldStrength          = dict(Freq     = 'VisuAcqImagingFrequency',
@@ -139,25 +140,23 @@ COMMON_META_REF = \
          PulseSequenceType              = 'PULPROG',  # 'VisuAcqEchoSequenceType'
          ScanningSequence               = 'VisuAcqSequenceName',
          SequenceVariant                = 'VisuAcqEchoSequenceType',
-         ScanOptions                    = dict(RG   = 'VisuRespSynchUsed',
-                                               CG   = 'VisuCardiacSynchUsed',
-                                               PFF  = dict(key = 'VisuAcqPartialFourier',
-                                                           idx = 0),
-                                               PFP  = dict(key = 'VisuAcqPartialFourier',
-                                                           idx = 1),
-                                               FC   = 'VisuAcqFlowCompensation',
-                                               SP   = 'PVM_FovSatOnOff',
-                                               FP   = 'VisuAcqSpectralSuppression'),
+         # BIDS ScanOptions is an array of DICOM scan-option codes; the Bruker
+         # flags below do not map cleanly to that type, so it is left unset.
+         ScanOptions                    = None,
          SequenceName                   = ['VisuAcquisitionProtocol',
                                            'ACQ_protocol_name'],  # if first component are None
          PulseSequenceDetails           = 'ACQ_scan_name',
-         NonlinearGradientCorrection    = 'VisuAcqKSpaceTraversal',
+         # BIDS type: boolean. Bruker VisuAcqKSpaceTraversal is a string, not a
+         # gradient-nonlinearity-correction flag, so it is left unset.
+         NonlinearGradientCorrection    = None,
 
          # IN_PLANE_SPATIAL_ENCODING
          NumberShots                    = 'VisuAcqKSpaceTrajectoryCnt',
          ParallelReductionFactorInPlane = 'ACQ_phase_factor',
          ParallelAcquisitionTechnique   = None,
-         PartialFourier                 = 'VisuAcqPartialFourier',
+         # BIDS PartialFourier is a single number (fraction); Bruker reports a
+         # per-axis array, which is not directly convertible, so it is left unset.
+         PartialFourier                 = None,
          PartialFourierDirection        = None,
          PhaseEncodingDirection         = [dict(key         = 'VisuAcqGradEncoding',
                                                 where       = 'phase_enc'),
@@ -220,8 +219,8 @@ FMRI_META_REF = \
          # - fMRI task information
          Instructions                   = None,
          TaskDescription                = None,
-         CogAtlasID                     = 'https://www.cognitiveatlas.org/fillYourID',
-         CogPOID                        = 'http://www.cogpo.org/fillYourID'
+         CogAtlasID                     = None,  # user-fillable; omitted when unset
+         CogPOID                        = None   # user-fillable; omitted when unset
          )
 
 
@@ -230,15 +229,16 @@ FIELDMAP_META_REF = \
          )
 
 DATASET_DESC_REF = \
-    dict(Name='',
-         BIDSVersion='1.2.2',
+    dict(Name='Untitled',
+         BIDSVersion='1.10.0',
+         DatasetType='raw',
          License='',
-         Authors=[''],
+         Authors=[],
          Acknowledgements='',
-         HowToAsknowledge='',
-         Funding=[''],
-         EthicApprovals='',
-         ReferenceAndLinks='',
+         HowToAcknowledge='',
+         Funding=[],
+         EthicsApprovals=[],
+         ReferencesAndLinks=[],
          DatasetDOI='')
 
 XYZT_UNITS = \

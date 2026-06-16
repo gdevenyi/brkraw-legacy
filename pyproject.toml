@@ -17,6 +17,7 @@ dependencies = [
     'reshipe>=0.1.0',
     'nibabel>=3.2.1',
     'pandas>=1.5.0',
+    'pybids>=0.16',
 ]
 description = "Bruker PvDataset Loader"
 license = {text = "GNLv3"}
@@ -48,6 +49,7 @@ dev = [
     "pytest",
     "nbmake",
     "types-PyYAML",
+    "bids-validator-deno",
 ]
 
 [tool.hatch.version]
