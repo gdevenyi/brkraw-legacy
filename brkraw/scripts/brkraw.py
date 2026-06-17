@@ -125,8 +125,11 @@ def main():
         if study.is_pvdataset:
             if args.output:
                 output = args.output
-            else:
+            elif study._pvobj.subj_id is not None:
                 output = '{}_{}'.format(study._pvobj.subj_id,study._pvobj.study_id)
+            else:
+                # standalone scan without a subject file: name after the input dir
+                output = os.path.basename(os.path.normpath(path))
             if scan_id:
                 acqpars  = study.get_acqp(int(scan_id))
                 scanname = acqpars._parameters['ACQ_scan_name']

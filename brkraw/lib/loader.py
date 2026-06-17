@@ -121,10 +121,11 @@ class BrukerLoader():
         self._override_position = None
         self._override_type = None
 
-        if (self.num_scans > 0) and (self._subject is not None):
-            self._is_pvdataset = True
-        else:
-            self._is_pvdataset = False
+        # A dataset is loadable as long as scans were found. The study-level
+        # `subject` file is optional: individually exported scans (e.g. PV360
+        # standalone scans) have no subject but their reconstructions are still
+        # readable. Subject-derived fields are None in that case.
+        self._is_pvdataset = self.num_scans > 0
 
     @property
     def pvobj(self):
@@ -1004,7 +1005,7 @@ class BrukerLoader():
                             num_slices_each_pack.append(matrix_shape[0])
                 slice_distances_each_pack = [frame_thickness for _ in range(num_slice_packs)]
             else:
-                if version not in (3, 4, 5):
+                if version not in (3, 4, 5, 8):  # 8 = ParaVision 360
                     warnings.warn('Unexpected version[VisuVersion];{}'.format(version), UserWarning)
 
                 num_slice_packs = get_value(visu_pars, 'VisuCoreSlicePacksDef')

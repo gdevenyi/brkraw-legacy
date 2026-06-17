@@ -219,6 +219,45 @@ class PvDatasetDir(PvDatasetBase):
                             self._reco[int(scan_id)] = [_reco(reco_id=int(reco_id),
                                                               idx=os.path.join(root, 'reco'))]
 
+        # Fallback: a standalone scan/EXPNO directory with no study-level `subject`
+        # file (e.g. an individually exported PV360 scan). Load it as a one-scan
+        # dataset so its reconstructions can still be read/converted.
+        if not self._method:
+            files = os.listdir(self.__path)
+            if 'method' in files and 'acqp' in files:
+                self._register_scan_dir(1, self.__path)
+
+    def _register_scan_dir(self, scan_id, root):
+        """Register one scan/EXPNO directory (method/acqp/raw + its PROCNOs)."""
+        with open(os.path.join(root, 'method'), 'r') as f:
+            self._method[scan_id] = Parameter(f.read().split('\n'))
+        with open(os.path.join(root, 'acqp'), 'r') as f:
+            self._acqp[scan_id] = Parameter(f.read().split('\n'))
+        for raw in ('fid', 'rawdata.job0'):
+            raw_path = os.path.join(root, raw)
+            if os.path.exists(raw_path):
+                self._fid[scan_id] = raw_path
+                break
+        traj_path = os.path.join(root, 'traj')
+        if os.path.exists(traj_path):
+            self._traj[scan_id] = traj_path
+        pdata = os.path.join(root, 'pdata')
+        if os.path.isdir(pdata):
+            for reco in sorted(os.listdir(pdata)):
+                rdir = os.path.join(pdata, reco)
+                if not (reco.isdigit() and os.path.isdir(rdir)):
+                    continue
+                if not (os.path.exists(os.path.join(rdir, '2dseq'))
+                        and os.path.exists(os.path.join(rdir, 'visu_pars'))):
+                    continue
+                reco_id = int(reco)
+                self._2dseq.setdefault(scan_id, []).append(
+                    _2dseq(reco_id=reco_id, idx=os.path.join(rdir, '2dseq')))
+                self._visu_pars.setdefault(scan_id, []).append(
+                    _visu_pars(reco_id=reco_id, idx=os.path.join(rdir, 'visu_pars')))
+                self._reco.setdefault(scan_id, []).append(
+                    _reco(reco_id=reco_id, idx=os.path.join(rdir, 'reco')))
+
     def _open_object(self, path):
         return open(path, 'rb')
 

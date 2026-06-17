@@ -121,4 +121,24 @@ def test_non_pvdataset_directory_is_clean():
     if not pv360.is_dir():
         pytest.skip('pv360/full/std_data not available')
     loader = BrukerLoader(str(pv360))   # must not raise
+    # the collection root has no scans of its own -> not a single PvDataset
     assert loader.is_pvdataset is False
+
+
+# --------------------------------------------------------------------------- #
+# Standalone scan/EXPNO directory (no subject file) loads as a one-scan dataset
+# --------------------------------------------------------------------------- #
+
+def test_standalone_scan_directory_loads():
+    scan = _TESTDATA / 'pv360' / 'full' / 'std_data' / 'T1_FLASH'
+    if not (scan / 'acqp').exists():
+        pytest.skip('pv360 T1_FLASH scan not available')
+    if not _has_real_2dseq(BrukerLoader(str(scan)), 1, 1):
+        pytest.skip('T1_FLASH 2dseq is an unpulled LFS stub')
+    d = BrukerLoader(str(scan))
+    assert d.is_pvdataset is True
+    assert d.num_scans == 1
+    assert d.pvobj.avail_reco_id == {1: [1]}
+    assert d.pvobj.subj_id is None            # no subject file
+    nii = d.get_niftiobj(1, 1)
+    assert nii.shape == (384, 384, 9)
