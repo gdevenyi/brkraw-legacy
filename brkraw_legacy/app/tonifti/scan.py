@@ -1,13 +1,13 @@
 from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
-from brkraw.api.data import Scan
-from brkraw.api.pvobj import PvScan, PvReco, PvFiles
+from brkraw_legacy.api.data import Scan
+from brkraw_legacy.api.pvobj import PvScan, PvReco, PvFiles
 from .base import BaseMethods
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Union, Optional, Literal
-    from brkraw.api import PlugInSnippet
+    from brkraw_legacy.api import PlugInSnippet
     from nibabel.nifti1 import Nifti1Image
     
 

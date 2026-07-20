@@ -1,13 +1,13 @@
 """Docstring for public module D100, D200."""
 from __future__ import annotations
-from brkraw.api.data import Study
+from brkraw_legacy.api.data import Study
 from .base import BaseMethods
 from .scan import ScanToNifti
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Optional, Literal, Union
     from pathlib import Path
-    from brkraw.api import PlugInSnippet
+    from brkraw_legacy.api import PlugInSnippet
     from nibabel.nifti1 import Nifti1Header
 
 

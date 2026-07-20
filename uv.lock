@@ -92,7 +92,7 @@ wheels = [
 ]
 
 [[package]]
-name = "brkraw"
+name = "brkraw-legacy"
 source = { editable = "." }
 dependencies = [
     { name = "nibabel" },

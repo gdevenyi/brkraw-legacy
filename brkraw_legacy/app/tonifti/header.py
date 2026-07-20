@@ -8,7 +8,7 @@ from nibabel.nifti1 import Nifti1Image
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Optional, Literal
-    from brkraw.api.data import ScanInfo
+    from brkraw_legacy.api.data import ScanInfo
 
 
 class Header:

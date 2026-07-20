@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from brkraw import BrukerLoader
-from brkraw.lib.utils import convert_data_to
+from brkraw_legacy import BrukerLoader
+from brkraw_legacy.lib.utils import convert_data_to
 
 _TESTDATA = Path(__file__).parents[1] / 'testdata'
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
 from .base import BaseMethods
-from brkraw.api.data import Scan
-from brkraw.api.pvobj import PvScan, PvReco, PvFiles
+from brkraw_legacy.api.data import Scan
+from brkraw_legacy.api.pvobj import PvScan, PvReco, PvFiles
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Union

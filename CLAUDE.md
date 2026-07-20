@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BrkRaw is a Python library for accessing and converting raw MRI data from Bruker Biospin preclinical scanners. It provides a CLI (`brkraw`, `brk-backup`) and Python API for reading Bruker PvDatasets (directory or ZIP), reconstructing images, and exporting to NIfTI/BIDS formats.
+BrkRaw-legacy is a Python library for accessing and converting raw MRI data from Bruker Biospin preclinical scanners. It provides a CLI (`brkraw-legacy`, `brk-legacy-backup`) and Python API for reading Bruker PvDatasets (directory or ZIP), reconstructing images, and exporting to NIfTI/BIDS formats.
 
-Currently on `legacy` branch (v0.4.0 WIP).
+This is a hard fork of the upstream [BrkRaw](https://github.com/BrkRaw/brkraw) 0.3.x/0.4 line, developed independently of upstream 0.5+. The distribution is `brkraw-legacy`, the import package is `brkraw_legacy`. Current version: 0.4.0.
 
 ## Build & Development Commands
 
 ```bash
-uv sync                       # Install with dev dependencies (editable, includes all runtime deps)
-uv sync --extra simpleitk       # Also include SimpleITK
+uv sync                       # Runtime deps only (editable install)
+uv sync --extra dev           # Also install pytest/ruff/bids-validator (needed to run tests)
+uv sync --extra simpleitk     # Also include SimpleITK
 
 # Testing
 make tests/tutorials         # Clone tutorial data (required before running tests)
@@ -32,7 +33,7 @@ make demo
 
 ```
 Raw Bruker Data (directory or ZIP)
-  → BrukerLoader (lib/loader.py)     — main entry point, also exposed as brkraw.load()
+  → BrukerLoader (lib/loader.py)     — main entry point, also exposed as brkraw_legacy.load()
     → PvStudy (api/pvobj/)           — represents a session with multiple scans
       → PvScan → PvReco             — individual scan and reconstruction data
         → NIfTI/BIDS export          — via app/tonifti/
@@ -40,22 +41,23 @@ Raw Bruker Data (directory or ZIP)
 
 ### Key layers
 
-- **`brkraw/lib/`** — Low-level: `BrukerLoader` (loader.py), parameter parsing (parser.py), orientation/affine math (orient.py), image reconstruction (recon.py, recoFunctions.py), BIDS metadata references (reference.py), custom exceptions (errors.py)
-- **`brkraw/api/pvobj/`** — Mid-level object model: `PvStudy`, `PvScan`, `PvReco`, `PvFiles`, `Parameter`. All inherit from `BaseMethods`/`BaseBufferHandler` for file/buffer handling
-- **`brkraw/api/analyzer/`** — Data analysis utilities
-- **`brkraw/api/data/`** — Data container classes
-- **`brkraw/app/tonifti/`** — High-level NIfTI conversion: `StudyToNifti`, `ScanToNifti`, `ToNiftiPlugin`
-- **`brkraw/scripts/`** — CLI entry points (`brkraw.py` with subcommands: info, tonii, tonii_all, bids_helper, bids_convert)
+- **`brkraw_legacy/lib/`** — Low-level: `BrukerLoader` (loader.py), parameter parsing (parser.py), orientation/affine math (orient.py), image reconstruction (recon.py, recoFunctions.py), BIDS entity/filename rules (bids.py), BIDS metadata references (reference.py), custom exceptions (errors.py)
+- **`brkraw_legacy/api/pvobj/`** — Mid-level object model: `PvStudy`, `PvScan`, `PvReco`, `PvFiles`, `Parameter`. All inherit from `BaseMethods`/`BaseBufferHandler` for file/buffer handling
+- **`brkraw_legacy/api/analyzer/`** — Data analysis utilities
+- **`brkraw_legacy/api/data/`** — Data container classes
+- **`brkraw_legacy/app/tonifti/`** — High-level NIfTI conversion: `StudyToNifti`, `ScanToNifti`, `ToNiftiPlugin`
+- **`brkraw_legacy/scripts/`** — CLI entry points (`brkraw_legacy.py` with subcommands: info, tonii, tonii_all, bids_helper, bids_convert)
 
 ### External dependencies of note
 
 - **xnippet** (PyPI) — configuration management framework, used for `XnippetManager` in `__init__.py`
 - **reshipe** — data handling utilities
 - **nibabel** — NIfTI format support (required, used in orientation math and conversion)
+- **pybids** — BIDS entity/datatype definitions, used by `lib/bids.py`
 
 ## Testing
 
-Tests are numbered by layer: `01_api_pvobj`, `02_api_analyzer`, `03_api_helper`, `04_api_data`, `05_app_tonifti`. They require tutorial sample data — run `make tests/tutorials` first. CI runs on Python 3.11–3.14 across Ubuntu/Windows/macOS.
+Tests are numbered by layer: `01_api_pvobj`, `02_api_analyzer`, `03_api_helper`, `04_api_data`, `05_app_tonifti`, `06_bids`, `07_conversion`. Some require tutorial sample data — run `make tests/tutorials` first. CI runs on Python 3.11–3.14 across Ubuntu/Windows/macOS.
 
 ## Linting
 

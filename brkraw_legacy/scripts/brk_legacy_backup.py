@@ -6,12 +6,12 @@ import datetime
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='brk-backup',
-                                     description="BrkRaw command-line interface for archiving")
+    parser = argparse.ArgumentParser(prog='brk-legacy-backup',
+                                     description="BrkRaw-legacy command-line interface for archiving")
     parser.add_argument("-v", "--version", action='version', version='%(prog)s v{}'.format(__version__))
 
     subparsers = parser.add_subparsers(title='Sub-commands',
-                                       description='brk-backup provides convenient tool '
+                                       description='brk-legacy-backup provides convenient tool '
                                                    'for archiving and check the status.',
                                        help='description',
                                        dest='function',

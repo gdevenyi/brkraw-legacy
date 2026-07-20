@@ -1,45 +1,41 @@
 cff-version: 1.2.0
 
-title: "brkraw"
+title: "brkraw-legacy"
 
-version: "0.3.10"
+version: "0.4.0"
 
-abstract: Bruker PvDataset Loader
+abstract: Bruker PvDataset Loader (maintained fork of the BrkRaw 0.3.x/0.4 line)
 
-message: "If you use this software, please cite it as below."
+message: "If you use this software, please cite it as below, along with the original BrkRaw software listed under references."
 
-repository-code: "https://github.com/BrkRaw/brkraw"
-
-identifiers:
-  - description: This is the collection of archived snapshots of all releases
-    type: doi
-    value: "10.5281/zenodo.245546149"
+repository-code: "https://github.com/gdevenyi/brkraw-legacy"
 
 contact:
-  - email: shlee@unc.edu
-    family-names: SungHo 
-    given-names: Lee
+  - email: gdevenyi@gmail.com
+    family-names: Devenyi
+    given-names: Gabriel A.
 
 authors:
   - email: shlee@unc.edu
-    family-names: SungHo 
-    given-names: Lee
+    family-names: Lee
+    given-names: Sung-Ho
 
   - email: banwoomi@unc.edu
-    family-names: Woomi  
-    given-names: Ban
+    family-names: Ban
+    given-names: Woomi
 
-  - family-names: Dumas 
+  - family-names: Dumas
     given-names: Jaiden
 
-  - family-names: Devenyi 
+  - email: gdevenyi@gmail.com
+    family-names: Devenyi
     given-names: Gabriel A.
 
   - email: shihy@neurology.unc.edu
-    family-names: Yen-Yu
-    given-names: Ian Shih
+    family-names: Shih
+    given-names: Yen-Yu Ian
 
-license: GPL-3.0
+license: GPL-3.0-or-later
 
 keywords:
   - bruker
@@ -47,3 +43,20 @@ keywords:
   - converter
   - administrator_tool
   - brain imaging data structure
+
+references:
+  - type: software
+    title: "BrkRaw/bruker: BrkRaw"
+    authors:
+      - email: shlee@unc.edu
+        family-names: Lee
+        given-names: Sung-Ho
+      - email: banwoomi@unc.edu
+        family-names: Ban
+        given-names: Woomi
+      - email: shihy@neurology.unc.edu
+        family-names: Shih
+        given-names: Yen-Yu Ian
+    repository-code: "https://github.com/BrkRaw/brkraw"
+    doi: "10.5281/zenodo.3877179"
+    notes: "The original upstream project that brkraw-legacy is forked from."

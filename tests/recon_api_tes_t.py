@@ -1,6 +1,6 @@
 from pathlib import Path
-from brkraw.app import tonifti as tonii
-from brkraw.lib.recon import reconstruction
+from brkraw_legacy.app import tonifti as tonii
+from brkraw_legacy.lib.recon import reconstruction
 
 import numpy as np
 import matplotlib.pyplot as plt

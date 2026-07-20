@@ -7,7 +7,7 @@ for further processing and analysis tasks.
 
 from __future__ import annotations
 from collections import OrderedDict
-from brkraw.api import helper
+from brkraw_legacy.api import helper
 from .base import BaseAnalyzer
 from typing import TYPE_CHECKING, Optional, Union
 if TYPE_CHECKING:

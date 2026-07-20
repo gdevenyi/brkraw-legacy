@@ -19,25 +19,34 @@ dependencies = [
     'pandas>=1.5.0',
     'pybids>=0.16',
 ]
-description = "Bruker PvDataset Loader"
-license = {text = "GNLv3"}
+description = "Bruker PvDataset Loader (maintained fork of the BrkRaw 0.3.x/0.4 line)"
+license = {text = "GPL-3.0-or-later"}
 dynamic = ["version"]
-maintainers = [
-    {name = "SungHo Lee", email = 'shlee@unc.edu'}
+authors = [
+    {name = "SungHo Lee", email = 'shlee@unc.edu'},
+    {name = "Woomi Ban", email = 'banwoomi@unc.edu'},
+    {name = "Jaiden Dumas"},
+    {name = "Gabriel A. Devenyi", email = 'gdevenyi@gmail.com'},
+    {name = "Yen-Yu Ian Shih", email = 'shihy@neurology.unc.edu'},
 ]
-name = "brkraw"
+maintainers = [
+    {name = "Gabriel A. Devenyi", email = 'gdevenyi@gmail.com'}
+]
+name = "brkraw-legacy"
 readme = "README.md"
 requires-python = ">=3.11"
 keywords = [
-    'bruker', 
-    'data_handler', 
-    'converter', 
-    'administrator_tool', 
-    'extensible', 
+    'bruker',
+    'data_handler',
+    'converter',
+    'administrator_tool',
+    'extensible',
 ]
 
 [project.urls]
-Homepage = "https://brkraw.github.io"
+Homepage = "https://github.com/gdevenyi/brkraw-legacy"
+Repository = "https://github.com/gdevenyi/brkraw-legacy"
+Issues = "https://github.com/gdevenyi/brkraw-legacy/issues"
 
 [project.optional-dependencies]
 simpleitk = [
@@ -53,12 +62,15 @@ dev = [
 ]
 
 [tool.hatch.version]
-path = "brkraw/__init__.py"
+path = "brkraw_legacy/__init__.py"
 style = "pep440"
 
+[tool.hatch.build.targets.wheel]
+packages = ["brkraw_legacy"]
+
 [project.scripts]
-brkraw = "brkraw.scripts.brkraw:main"
-brk-backup = 'brkraw.scripts.brk_backup:main'
+brkraw-legacy = "brkraw_legacy.scripts.brkraw_legacy:main"
+brk-legacy-backup = 'brkraw_legacy.scripts.brk_legacy_backup:main'
 
 [tool.pytest.ini_options]
 log_cli = true

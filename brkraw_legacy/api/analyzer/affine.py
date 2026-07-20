@@ -7,7 +7,7 @@ orientation and alignment of imaging data.
 """
 
 from __future__ import annotations
-from brkraw.api import helper
+from brkraw_legacy.api import helper
 from .base import BaseAnalyzer
 import numpy as np
 from copy import copy

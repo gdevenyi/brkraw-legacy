@@ -2,8 +2,8 @@ import os
 import pytest
 import subprocess
 from pathlib import Path
-from brkraw.api.pvobj import PvStudy
-from brkraw import setup_logging
+from brkraw_legacy.api.pvobj import PvStudy
+from brkraw_legacy import setup_logging
 
 def pytest_configure(config):
     setup_logging(path=Path(__file__).parent / 'logging.yaml')

@@ -2,7 +2,7 @@
 """Schema-driven BIDS path and suffix construction.
 
 This module replaces the hand-rolled filename/entity-ordering logic that used to
-live in ``brkraw.scripts.brkraw``.  Filenames are assembled from the authoritative
+live in ``brkraw_legacy.scripts.brkraw_legacy``.  Filenames are assembled from the authoritative
 BIDS schema (``bidsschematools``, the schema engine that ships with PyBIDS) so that
 entity ordering, allowed suffixes per datatype, and label validity always track the
 specification rather than a frozen copy of it.
@@ -41,7 +41,7 @@ COLUMN_TO_ENTITY = dict(
     echo='echo',
 )
 
-#: Datatypes BrkRaw emits into the validated BIDS tree.
+#: Datatypes BrkRaw-legacy emits into the validated BIDS tree.
 DATATYPES = ('anat', 'func', 'dwi', 'fmap')
 
 _LABEL_RE = re.compile(r'^[0-9a-zA-Z]+$')
@@ -81,7 +81,7 @@ def validate_suffix(datatype, suffix):
     """Raise ``InvalidApproach`` unless ``suffix`` is valid for ``datatype``."""
     if datatype not in DATATYPES:
         raise InvalidApproach(
-            "'{}' is not a BIDS datatype handled by BrkRaw {}.".format(datatype, DATATYPES))
+            "'{}' is not a BIDS datatype handled by BrkRaw-legacy {}.".format(datatype, DATATYPES))
     valid = suffixes_for(datatype)
     if suffix not in valid:
         raise InvalidApproach(
@@ -110,7 +110,7 @@ def build_stem(entities, suffix):
 def build_prefix(entities, datatype):
     """Return ``(relative_dir, prefix)`` excluding ``run``/``echo``/suffix.
 
-    BrkRaw appends ``_run-XX``, ``_echo-X`` and the suffix downstream (run indices are
+    BrkRaw-legacy appends ``_run-XX``, ``_echo-X`` and the suffix downstream (run indices are
     resolved only after conflict detection, echoes only while splitting multi-echo
     volumes).  This returns everything up to but not including those, in canonical
     schema order, so the later appends land in the spec-correct positions.

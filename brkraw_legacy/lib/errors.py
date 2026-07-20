@@ -41,7 +41,7 @@ class FileNotValidError(Error):
 
 
 class ArchiveFailedError(Error):
-    """ Raised when the archive process is failed [designed for brkraw module] """
+    """ Raised when the archive process is failed [designed for brkraw_legacy module] """
     file_name = None
 
     def __init__(self, file_name=None):

@@ -12,8 +12,8 @@ _supporting_bids_ver = '1.10.0'
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='brkraw',
-                                     description="BrkRaw command-line interface")
+    parser = argparse.ArgumentParser(prog='brkraw-legacy',
+                                     description="BrkRaw-legacy command-line interface")
     parser.add_argument("-v", "--version", action='version', version='%(prog)s v{}'.format(__version__))
 
     subparsers = parser.add_subparsers(title='Sub-commands',
@@ -588,10 +588,10 @@ def generateModalityAgnosticFiles(root_path, json_fname):
 
     if not os.path.exists(data_des):
         desc = deepcopy(DATASET_DESC_REF)
-        # Record BrkRaw as the generator (BIDS recommended provenance).
-        desc['GeneratedBy'] = [dict(Name='BrkRaw',
+        # Record BrkRaw-legacy as the generator (BIDS recommended provenance).
+        desc['GeneratedBy'] = [dict(Name='BrkRaw-legacy',
                                     Version=__version__,
-                                    CodeURL='https://github.com/BrkRaw/brkraw')]
+                                    CodeURL='https://github.com/gdevenyi/brkraw-legacy')]
         # Drop empty placeholders so the sidecar only ships meaningful values.
         desc = {k: v for k, v in desc.items() if v not in ('', [], {})}
         with open(data_des, 'w') as f:

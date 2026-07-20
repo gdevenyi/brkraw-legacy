@@ -41,8 +41,8 @@ jobs:
 
     - name: Version and help
       run: |
-        brkraw --version
-        brkraw --help
+        brkraw-legacy --version
+        brkraw-legacy --help
 
     - name: "smoke end-to-end test: use CLI on tutorial data"
       run: make demo

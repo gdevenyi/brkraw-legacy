@@ -1,6 +1,6 @@
 """This module provides classes and functions for managing and analyzing MRI study data.
 
-The primary class, Study, extends the functionalities of PvStudy from the brkraw.api.pvobj module
+The primary class, Study, extends the functionalities of PvStudy from the brkraw_legacy.api.pvobj module
 and integrates additional analysis capabilities through the BaseAnalyzer class. It handles the
 processing of study-specific data, including the retrieval and management of scan objects,
 parsing of study header information, and compiling comprehensive information about studies.
@@ -11,13 +11,13 @@ Classes:
            and compile detailed information about the study and its associated scans and reconstructions.
 
 Dependencies:
-    PvStudy (from brkraw.api.pvobj): 
+    PvStudy (from brkraw_legacy.api.pvobj): 
         Base class for handling the basic operations related to photovoltaic studies.
-    BaseAnalyzer (from brkraw.api.analyzer.base): 
+    BaseAnalyzer (from brkraw_legacy.api.analyzer.base): 
         Base class providing analytical methods used across different types of data analyses.
     Scan (from .scan): 
         Class representing individual scans within a study, providing detailed data access and manipulation.
-    Recipe (from brkraw.api.helper.recipe): 
+    Recipe (from brkraw_legacy.api.helper.recipe): 
         Utility class used for applying specified recipes to data objects, enabling structured data extraction and analysis.
 
 This module is utilized in MRI research environments where detailed and structured analysis of photovoltaic data is required.
@@ -31,8 +31,8 @@ from copy import copy
 from pathlib import Path
 from dataclasses import dataclass
 from .scan import Scan
-from brkraw.api.pvobj import PvStudy
-from brkraw.api.analyzer.base import BaseAnalyzer
+from brkraw_legacy.api.pvobj import PvStudy
+from brkraw_legacy.api.analyzer.base import BaseAnalyzer
 from reshipe import RecipeParser
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:

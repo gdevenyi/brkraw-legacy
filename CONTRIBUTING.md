@@ -1,28 +1,31 @@
-# Contributing to BrkRaw
+# Contributing to BrkRaw-legacy
 
-Thank you for your interest in contributing to BrkRaw! Whether you're tackling a bug, adding a new feature, or improving our documentation, every contribution is appreciated. This guide will help you get started with your contributions in the most effective way.
+Thank you for your interest in contributing to BrkRaw-legacy! Whether you're tackling a bug, adding a new feature, or improving our documentation, every contribution is appreciated. This guide will help you get started with your contributions in the most effective way.
+
+BrkRaw-legacy is an independent hard fork of the [BrkRaw](https://github.com/BrkRaw/brkraw) 0.3.x/0.4 line. Contributions here are not submitted upstream, and upstream changes are not merged in. If your contribution targets the current 0.5+ BrkRaw architecture, please direct it to the upstream project instead.
 
 ## Ways to Contribute
 
 ### Reporting Issues
 
-If you encounter a bug, have a suggestion, or want to make a feature request, please use the Issues section. Include as much detail as possible and label your issue appropriately.
+If you encounter a bug, have a suggestion, or want to make a feature request, please use the [Issues](https://github.com/gdevenyi/brkraw-legacy/issues) section of this repository. Include as much detail as possible and label your issue appropriately.
 
 ### Pull Requests
 
 We welcome pull requests with open arms! Here’s how you can make one:
 
-- **Code Changes**: If you are updating the BrkRaw codebase, perhaps due to a ParaVision compatibility issue or to suggest a new standard, please make sure your changes are well-documented. 
+- **Code Changes**: If you are updating the BrkRaw-legacy codebase, perhaps due to a ParaVision compatibility issue or to suggest a new standard, please make sure your changes are well-documented. 
 - **New Features**: If you're introducing a new feature, ensure that you include appropriate test scripts in the `tests` directory, following our standard testing workflow. Check our documentation for more details.
-- **New Applications**: Contributions that significantly enhance community utility but cannot be integrated via the plugin architecture should be directed to the main BrkRaw package.
 
-Before creating a pull request, ensure that your code complies with the existing code style and that you have tested your changes locally.
+Before creating a pull request, ensure that your code complies with the existing code style (`ruff check .`) and that you have tested your changes locally.
 
-### Contributing to Child Repositories
+### Related Upstream Repositories
 
-- **[plugin](https://github.com/brkraw/brkraw-plugin.git)**: For new functionalities at the app level, direct your contributions here.
-- **[dataset](https://github.com/brkraw/brkraw-dataset.git)**: To add a new dataset that needs to be tested via BrkRaw CI for data conversion consistency and reliability, please contribute here.
-- **[tutorial](https://github.com/brkraw/brkraw-tutorial.git)**: For new tutorials, tutorial revisions, or documentation that would help other users, please contribute to this repository.
+These repositories belong to the upstream BrkRaw project. This fork still consumes their data and plugins, but contributions to them go to upstream, not here.
+
+- **[plugin](https://github.com/brkraw/brkraw-plugin.git)**: New functionalities at the app level.
+- **[dataset](https://github.com/brkraw/brkraw-dataset.git)**: Datasets used to test data conversion consistency and reliability.
+- **[tutorial](https://github.com/brkraw/brkraw-tutorial.git)**: Tutorials, tutorial revisions, and user documentation.
 
 ## Before You Start
 

@@ -8,14 +8,14 @@ Classes:
     Scan: Main interface class for working with Pv objects and handling detailed scan analysis,
           including retrieval of objects from memory and performing affine and data array analysis.
 
-This module is part of the `brkraw` package which aims to provide tools for MRI data manipulation and analysis.
+This module is part of the `brkraw_legacy` package which aims to provide tools for MRI data manipulation and analysis.
 """
 
 from __future__ import annotations
 import ctypes
-from brkraw.api.pvobj import PvScan, PvReco, PvFiles
-from brkraw.api.pvobj.base import BaseBufferHandler
-from brkraw.api.analyzer import ScanInfoAnalyzer, AffineAnalyzer, DataArrayAnalyzer, BaseAnalyzer
+from brkraw_legacy.api.pvobj import PvScan, PvReco, PvFiles
+from brkraw_legacy.api.pvobj.base import BaseBufferHandler
+from brkraw_legacy.api.analyzer import ScanInfoAnalyzer, AffineAnalyzer, DataArrayAnalyzer, BaseAnalyzer
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import Optional, Union

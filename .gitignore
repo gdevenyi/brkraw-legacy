@@ -14,14 +14,14 @@ build
 .mypy_cache
 .pytest_cache
 
-tests/.brkraw
+tests/.brkraw_legacy
 tests/_*.ipynb
 tests/tutorials
 tests/_datasets
 
 .python-version
 .vscode
-brkraw.log
+brkraw-legacy.log
 manuals/
 testdata/
 FILE_FORMAT.md

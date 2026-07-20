@@ -1,11 +1,11 @@
 from __future__ import annotations
 import warnings
 import numpy as np
-from brkraw import config
+from brkraw_legacy import config
 from nibabel.nifti1 import Nifti1Image
 from .header import Header
-from brkraw.api.pvobj.base import BaseBufferHandler
-from brkraw.api.data import Scan
+from brkraw_legacy.api.pvobj.base import BaseBufferHandler
+from brkraw_legacy.api.data import Scan
 from xnippet.snippet import PlugInSnippet
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ class BaseMethods(BaseBufferHandler):
             except ValueError:
                 warnings.warn(
                     "Scale correction not applied. The 'slope' and 'offset' provided are not in a tested condition. "
-                    "For further assistance, contact the developer via issue at: https://github.com/brkraw/brkraw.git",
+                    "For further assistance, contact the developer via issue at: https://github.com/gdevenyi/brkraw-legacy.git",
                     UserWarning)
         return dataobj
     

@@ -484,7 +484,7 @@ def mkdir(path):
         raise UnexpectedError
 
 
-# brkraw script
+# brkraw-legacy script
 def set_rescale(args):
     if not args.ignore_rescale:
         if args.ignore_slope:

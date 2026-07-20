@@ -1,6 +1,6 @@
 """BIDS path-builder and end-to-end conversion tests.
 
-The unit tests exercise ``brkraw.lib.bids`` directly and need no sample data.
+The unit tests exercise ``brkraw_legacy.lib.bids`` directly and need no sample data.
 The end-to-end test is skipped unless a local Bruker dataset and the
 ``bids-validator`` (Deno) binary are both available.
 """
@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from brkraw.lib import bids
-from brkraw.lib.errors import InvalidApproach
+from brkraw_legacy.lib import bids
+from brkraw_legacy.lib.errors import InvalidApproach
 
 
 # --------------------------------------------------------------------------- #
@@ -122,7 +122,7 @@ def _prepare_anat_dataset(pvdir, tmp_path):
     sheet = tmp_path / 'bids_map'
     out = tmp_path / 'raw'
 
-    subprocess.check_call(['brkraw', 'bids_helper', str(sample_parent),
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(sample_parent),
                            str(sheet), '-j'])
     df = pd.read_csv(str(sheet) + '.csv')
 
@@ -138,7 +138,7 @@ def _prepare_anat_dataset(pvdir, tmp_path):
     df['acq'] = ['scan{}'.format(i) for i in range(len(df))]
     df.to_csv(str(sheet) + '.csv', index=False)
 
-    subprocess.check_call(['brkraw', 'bids_convert', str(sample_parent),
+    subprocess.check_call(['brkraw-legacy', 'bids_convert', str(sample_parent),
                            str(sheet) + '.csv', '-j', str(sheet) + '.json',
                            '--output', str(out)])
     return out
@@ -153,7 +153,7 @@ def test_end_to_end_bids_convert(tmp_path):
     desc = json.loads((out / 'dataset_description.json').read_text())
     assert desc['BIDSVersion'] == '1.10.0'
     assert desc['DatasetType'] == 'raw'
-    assert any(g['Name'] == 'BrkRaw' for g in desc['GeneratedBy'])
+    assert any(g['Name'] == 'BrkRaw-legacy' for g in desc['GeneratedBy'])
     for typo in ('HowToAsknowledge', 'EthicApprovals', 'ReferenceAndLinks'):
         assert typo not in desc
 

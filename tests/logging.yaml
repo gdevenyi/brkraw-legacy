@@ -22,7 +22,7 @@ handlers:
     class: logging.FileHandler
     level: DEBUG
     formatter: simple
-    filename: brkraw.log
+    filename: brkraw-legacy.log
     encoding: utf8
     mode: w
 

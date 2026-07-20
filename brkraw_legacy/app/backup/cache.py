@@ -1,4 +1,4 @@
-from brkraw.app.tonifti import StudyToNifti
+from brkraw_legacy.app.tonifti import StudyToNifti
 
 import os
 import datetime

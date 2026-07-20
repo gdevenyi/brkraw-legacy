@@ -3,10 +3,10 @@ as well as compress only file needed
 """
 
 import argparse
-from brkraw import __version__
+from brkraw_legacy import __version__
 
 def main():
-    """main script allows convert brkraw
+    """main script allows convert brkraw_legacy
     provide list function of all available converting mode (including plugin)
     """
     parser = argparse.ArgumentParser(prog='brk_tonifti',

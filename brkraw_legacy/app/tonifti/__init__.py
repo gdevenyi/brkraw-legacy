@@ -2,9 +2,9 @@
 dependency:
     bids, plugin
 """
-from brkraw import config
-from brkraw.app.tonifti.plugin import ToNiftiPlugin, PvScan, PvReco, PvFiles
-from brkraw.app.tonifti.study import StudyToNifti, ScanToNifti
+from brkraw_legacy import config
+from brkraw_legacy.app.tonifti.plugin import ToNiftiPlugin, PvScan, PvReco, PvFiles
+from brkraw_legacy.app.tonifti.study import StudyToNifti, ScanToNifti
 
 tonifti_config = config.config['app']['tonifti']
 # tonifti_presets = config.get_fetcher('preset')
@@ -12,10 +12,10 @@ tonifti_config = config.config['app']['tonifti']
 __all__ = ['ToNiftiPlugin', 'StudyToNifti', 'ScanToNifti', 'PvScan', 'PvReco', 'PvFiles']
 
 # def main():
-#     """main script allows convert brkraw
+#     """main script allows convert brkraw_legacy
 #     provide list function of all available converting mode (including plugin)
 #     """
-#     parser =ArgParser(prog='brkraw-tonifti',
+#     parser =ArgParser(prog='brkraw-legacy-tonifti',
 #                       description="BrkRaw command-line interface for converting to NifTi1 format")
 #     parser.add_argument("-v", "--version", action='version', version='%(prog)s v{}'.format(__version__))
 

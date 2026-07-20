@@ -1,6 +1,6 @@
 import os
-from brkraw.app.tonifti import StudyToNifti
-from brkraw.api.config.utils.functools import get_dirsize, \
+from brkraw_legacy.app.tonifti import StudyToNifti
+from brkraw_legacy.api.config.utils.functools import get_dirsize, \
     get_filesize, yes_or_no, print_internal_error, TimeCounter
 import sys
 import datetime
