@@ -1,5 +1,6 @@
 from .errors import FileNotValidError, InvalidApproach, UnexpectedError
 from .orient import build_affine_from_orient_info, reversed_pose_correction, get_origin
+from .subject_orient import SUBJECT_POSE, SUBJECT_TYPES, normalize_subject_type
 from .pvobj import PvDatasetDir, PvDatasetZip
 from functools import reduce
 from .utils import get_value, is_all_element_same, multiply_all, encdir_code_converter, meta_get_value
@@ -154,7 +155,8 @@ class BrukerLoader():
             subtype(str): subject type that supported by PV
         """
         err_msg = 'Unknown subject type [{}]'.format(subjtype)
-        if subjtype not in ['Biped', 'Quadruped', 'Phantom', 'Other', 'OtherAnimal']:
+        subjtype = normalize_subject_type(subjtype)
+        if subjtype not in SUBJECT_TYPES:
             raise Exception(err_msg)
         self._override_type = subjtype
 
@@ -166,9 +168,9 @@ class BrukerLoader():
         err_msg = 'Unknown position string [{}]'.format(position_string)
         try:
             part, side = position_string.split('_')
-            if part not in ['Head', 'Foot', 'Tail']:
+            if part not in SUBJECT_POSE['part']:
                 raise Exception(err_msg)
-            if side not in ['Supine', 'Prone', 'Left', 'Right']:
+            if side not in SUBJECT_POSE['side']:
                 raise Exception(err_msg)
             self._override_position = position_string
         except Exception:
@@ -1128,7 +1130,12 @@ class BrukerLoader():
         if self._override_type is not None: # add option to override
             subj_type = self._override_type
         else:
-            subj_type = get_value(visu_pars, 'VisuSubjectType')    
+            # VisuSubjectType only exists from PV6 onwards; on PV5 fall back to
+            # the study-level SUBJECT_type (which spells bipeds 'Human') rather
+            # than leaving it unknown.
+            subj_type = get_value(visu_pars, 'VisuSubjectType')
+            if subj_type is None:
+                subj_type = normalize_subject_type(getattr(self._pvobj, 'subj_type', None))
 
         return dict(subject_type = subj_type,
                     subject_position = subj_position,

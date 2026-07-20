@@ -5,6 +5,7 @@ import numpy as np
 from nibabel.affines import from_matvec, to_matvec
 
 from .reference import ERROR_MESSAGES
+from .subject_orient import get_pose_rotation, uses_quadruped_frame
 
 
 def build_affine_from_orient_info(resol, rmat, pose,
@@ -19,30 +20,18 @@ def build_affine_from_orient_info(resol, rmat, pose,
 
     # convert space from image to subject
     # below positions are all reflect human-based position
-    if subj_pose:
-        if subj_pose == 'Head_Supine':
-            affine = apply_rotate(affine, rad_z=np.pi)
-        elif subj_pose == 'Head_Prone':
-            pass
-        # From here, not urgent, extra work to determine correction matrix needed.
-        elif subj_pose == 'Head_Left':
-            affine = apply_rotate(affine, rad_z=np.pi/2)
-        elif subj_pose == 'Head_Right':
-            affine = apply_rotate(affine, rad_z=-np.pi/2)
-        elif subj_pose in ['Foot_Supine', 'Tail_Supine']:
-            affine = apply_rotate(affine, rad_x=np.pi)
-        elif subj_pose in ['Foot_Prone', 'Tail_Prone']:
-            affine = apply_rotate(affine, rad_y=np.pi)
-        elif subj_pose in ['Foot_Left', 'Tail_Left']:
-            affine = apply_rotate(affine, rad_z=np.pi/2)
-        elif subj_pose in ['Foot_Right', 'Tail_Right']:
-            affine = apply_rotate(affine, rad_z=-np.pi/2)
-        else:  # in case Bruker put additional value for this header
-            raise Exception(ERROR_MESSAGES['NotIntegrated'])
+    try:
+        rotate_angle = get_pose_rotation(subj_pose)
+    except KeyError:  # in case Bruker put additional value for this header
+        raise Exception(ERROR_MESSAGES['NotIntegrated'])
+    if rotate_angle:
+        affine = apply_rotate(affine, **rotate_angle)
 
-    if subj_type != 'Biped':
-        # correct subject space if not biped (human or non-human primates)
-        # not sure this rotation is independent with subject pose, so put here instead last
+    if uses_quadruped_frame(subj_type):
+        # correct subject space if not biped (human or non-human primates).
+        # applied after the pose rotation on purpose: this is a fixed-frame
+        # anatomical convention change (Primate -> Rodent axes) and so is
+        # independent of how the subject was placed in the magnet.
         affine = apply_rotate(affine, rad_x=-np.pi/2, rad_y=np.pi)
     return affine
 
