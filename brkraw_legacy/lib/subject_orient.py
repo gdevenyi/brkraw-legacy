@@ -29,8 +29,10 @@ SUBJECT_POSE = {
     'side': ['Supine', 'Prone', 'Left', 'Right'],
 }
 
-#: ParaVision 5 spells the biped subject type ``Human`` in the study-level
-#: ``subject`` file; PV6+ spells it ``Biped`` in ``VisuSubjectType``.
+#: ``Human`` is the ParaVision 5 spelling of the biped type. Accepted so an
+#: explicit override (``--subjecttype Human``) works, but note that PV5 writes
+#: ``SUBJECT_type=Human`` unconditionally, so it must never be read off a PV5
+#: study as if it were a real declaration -- see ``uses_quadruped_frame``.
 _TYPE_ALIASES = {'Human': 'Biped'}
 
 #: Rotation taking the image frame to the subject frame, keyed by
@@ -77,22 +79,37 @@ def normalize_subject_type(subj_type):
 def uses_quadruped_frame(subj_type):
     """Whether the rodent (quadruped) axis correction applies.
 
-    ``VisuSubjectType`` only exists from ParaVision 6 onwards, so on PV5 data
-    it is always absent.  The manual is explicit that an unknown specimen uses
-    the Primate coordinate system, so an absent type must *not* select the
-    rodent correction -- otherwise every PV5 dataset gets an animal-specific
-    rotation applied on no evidence.
+    An absent type selects the rodent correction. That looks wrong next to the
+    PV6 manual (S1.3.6.2 says the Primate system "is also used for subject
+    specimen Unknown"), but the manual is describing ParaVision's own display
+    convention, not what a converter should do with PV5 data. Do not "fix" it
+    to biped without re-running the validation below.
+
+    ``VisuSubjectType`` exists only from PV6 onwards. ParaVision 5.1 cannot
+    express a subject type at all -- it writes ``SUBJECT_type=Human`` for every
+    study regardless of the actual specimen -- so on PV5 the type is genuinely
+    unknown, and preclinical PV5 data is overwhelmingly rodent.
+
+    Verified against ``testdata/new-orientation/``, where the same mouse
+    phantom was scanned head-first prone on both a PV5.1 and a PV6.0.1 system
+    (PV5 declares ``Human``, PV6 declares ``Quadruped``). Resampling the PV5
+    volumes into the PV6 reference grid:
+
+        rodent axes (absent type -> quadruped)   NCC +0.90 .. +0.95
+        primate axes (absent type -> biped)      NCC +0.22
+
+    across four matched 3D FLASH pairs. Honouring the ``Human`` label puts PV5
+    rodent data in the wrong frame, so the type must not be taken from the
+    study-level ``SUBJECT_type`` either.
 
     Args:
-        subj_type (str or None): raw or normalized subject type.
+        subj_type (str or None): raw or normalized subject type. None means
+            unknown, which is treated as non-biped.
 
     Returns:
-        bool: True only when the type is known and is not a biped.
+        bool: False only when the type is positively known to be a biped.
     """
-    subj_type = normalize_subject_type(subj_type)
-    if subj_type is None:
-        return False
-    return subj_type != 'Biped'
+    return normalize_subject_type(subj_type) != 'Biped'
 
 
 def get_pose_rotation(subj_pose):

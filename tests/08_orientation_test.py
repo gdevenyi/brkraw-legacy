@@ -1,15 +1,19 @@
 """Subject orientation regression tests.
 
-Covers the two bugs found by reviewing the affine code against FILE_FORMAT.md
-and the ParaVision 6.0.1 Software Manual:
+Covers the defect found by reviewing the affine code against FILE_FORMAT.md and
+the ParaVision 6.0.1 Software Manual: ``Foot_Left``/``Foot_Right`` (and their
+``Tail_*`` aliases) were given the *head-first* rotation in the legacy path,
+dropping the feet-first entry flip -- so the two conversion paths disagreed.
 
-1. ``Foot_Left``/``Foot_Right`` (and their ``Tail_*`` aliases) were given the
-   *head-first* rotation in the legacy path, dropping the feet-first entry flip.
-2. An absent ``VisuSubjectType`` selected the quadruped correction. The manual
-   (S1.3.6.2) states the Primate/biped system "is also used for subject
-   specimen Unknown", and ``VisuSubjectType`` does not exist before PV6 -- so
-   every PV5 dataset was getting an animal-specific rotation.
+Also pins the subject-type behaviour that the manual makes look wrong. S1.3.6.2
+says the Primate system "is also used for subject specimen Unknown", which reads
+as though an absent ``VisuSubjectType`` (i.e. all PV5 data) should use the biped
+frame. Changing it to that regresses real PV5 rodent conversions; see
+``test_absent_subject_type_uses_rodent_frame`` and the cross-study checks at the
+bottom of this file, which are the evidence.
 """
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -24,6 +28,23 @@ from brkraw_legacy.lib.subject_orient import (
 
 PI = np.pi
 SIDES = ['Supine', 'Prone', 'Left', 'Right']
+_TESTDATA = Path(__file__).parents[1] / 'testdata'
+
+
+def _pv5_study():
+    """Any PV5 study directory under ./testdata, or None."""
+    for base in (_TESTDATA / 'new-orientation', _TESTDATA / 'pv5' / 'full'):
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir()):
+            if (d / 'subject').is_file() and 'PV5' in d.name.upper():
+                return d
+    pv5 = _TESTDATA / 'pv5' / 'full'
+    if pv5.is_dir():
+        for d in sorted(pv5.iterdir()):
+            if (d / 'subject').is_file():
+                return d
+    return None
 
 #: Head_Prone is the reference (identity). The other head-first poses differ by
 #: a roll about the bore/head-foot axis.
@@ -108,17 +129,28 @@ def test_empty_pose_is_identity():
 
 # --- subject type -------------------------------------------------------
 
-def test_absent_subject_type_is_not_quadruped():
-    """PV5 has no VisuSubjectType; unknown must use the Primate system.
+def test_absent_subject_type_uses_rodent_frame():
+    """Unknown subject type must keep the rodent correction.
 
-    ParaVision 6.0.1 Software Manual S1.3.6.2: the Primate coordinate system
-    "is also used for subject specimen Unknown".
+    VisuSubjectType exists only from PV6 onwards, and PV5 cannot express a
+    subject type at all (it writes SUBJECT_type=Human for every study), so on
+    PV5 the type is genuinely unknown and the data is overwhelmingly rodent.
+
+    Validated against testdata/new-orientation/: the same mouse phantom scanned
+    head-first prone on PV5.1 and PV6.0.1 agrees at NCC +0.90..+0.95 under the
+    rodent frame and only +0.22 under the primate frame. The PV6 manual's
+    "Unknown -> Primate" rule describes ParaVision's display convention, not
+    what a converter should do here.
     """
-    assert uses_quadruped_frame(None) is False
+    assert uses_quadruped_frame(None) is True
 
 
-def test_pv5_human_normalizes_to_biped():
-    """PV5 spells the biped type 'Human' in the study-level subject file."""
+def test_explicit_human_override_is_biped():
+    """'Human' is accepted as the PV5 spelling of Biped for explicit overrides.
+
+    This is only for a user-supplied --subjecttype. It must never be read off a
+    PV5 study automatically: see test_pv5_subject_type_not_taken_from_subject_file.
+    """
     assert normalize_subject_type('Human') == 'Biped'
     assert uses_quadruped_frame('Human') is False
 
@@ -127,6 +159,28 @@ def test_pv5_human_normalizes_to_biped():
 def test_non_biped_types_still_corrected(subj_type):
     """Existing behaviour for known non-biped types is unchanged."""
     assert uses_quadruped_frame(subj_type) is True
+
+
+def test_pv5_subject_type_not_taken_from_subject_file():
+    """The loader must not read subject type off a PV5 study.
+
+    PV5 writes SUBJECT_type=Human unconditionally, so the resolved type must
+    stay None (unknown -> rodent) rather than becoming Biped. An earlier
+    revision of this change read the subject file and flipped PV5 rodent data
+    into the primate frame; testdata/new-orientation/ caught it.
+    """
+    from brkraw_legacy import BrukerLoader
+
+    study = _pv5_study()
+    if study is None:
+        pytest.skip('no PV5 study under ./testdata')
+    s = BrukerLoader(str(study))
+    assert s.pvobj.subj_type == 'Human', 'expected the PV5 subject file to say Human'
+    sid = s.pvobj.avail_scan_id[0]
+    info = s._get_orient_info(s.get_visu_pars(sid, 1), s.get_method(sid))
+    assert info['subject_type'] is None, (
+        'PV5 subject type must stay unknown, not be read from SUBJECT_type')
+    assert uses_quadruped_frame(info['subject_type']) is True
 
 
 def test_biped_not_corrected():
@@ -150,3 +204,85 @@ def test_quadruped_correction_applied_after_pose():
                                          subj_type='Quadruped', **kwargs)
     q = apply_rotate(np.eye(4), rad_x=-PI / 2, rad_y=PI)[:3, :3]
     assert np.allclose(quad[:3, :3], q @ biped[:3, :3], atol=1e-9)
+
+
+# --- cross-study validation (needs testdata/new-orientation/) --------------
+
+_NEWORIENT = _TESTDATA / 'new-orientation'
+_PV5_STUDY = _NEWORIENT / '20201230_CIC_PLANTEST_PV5_001.5S1'
+_PV6_STUDY = _NEWORIENT / '20201230_101610_CIC_LRMousePhantom_1_1'
+
+
+def _load(study, scan_id, subj_type=None):
+    from brkraw_legacy import BrukerLoader
+    s = BrukerLoader(str(study))
+    if subj_type:
+        s.override_subjtype(subj_type)
+    nii = s.get_niftiobj(scan_id, 1)
+    nii = nii[0] if isinstance(nii, list) else nii
+    data = np.asarray(nii.dataobj, dtype=float)
+    while data.ndim > 3:
+        data = data[..., 0]
+    return data, nii.affine
+
+
+def _resample_into(src, src_affine, ref_shape, ref_affine):
+    from scipy.ndimage import affine_transform
+    m = np.linalg.inv(src_affine) @ ref_affine
+    return affine_transform(src, m[:3, :3], offset=m[:3, 3],
+                            output_shape=ref_shape, order=1, cval=0.0)
+
+
+def _ncc(a, b):
+    a = a.ravel() - a.mean()
+    b = b.ravel() - b.mean()
+    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-12))
+
+
+needs_neworient = pytest.mark.skipif(
+    not (_PV5_STUDY.is_dir() and _PV6_STUDY.is_dir()),
+    reason='needs testdata/new-orientation/ (PV5 + PV6 phantom studies)')
+
+
+@needs_neworient
+@pytest.mark.parametrize('pv5_scan', [8, 9, 10, 13])
+def test_pv5_rodent_frame_matches_pv6_reference(pv5_scan):
+    """PV5 data must land in the same frame as the PV6 scan of the same object.
+
+    The same mouse phantom was scanned head-first prone on a PV5.1 and a
+    PV6.0.1 system. PV5 declares Human (it cannot declare anything else), PV6
+    declares Quadruped. Treating the absent PV5 type as rodent makes the two
+    agree; treating it as biped does not.
+    """
+    ref, ref_aff = _load(_PV6_STUDY, 13)
+    rodent, rodent_aff = _load(_PV5_STUDY, pv5_scan, 'Quadruped')
+    primate, primate_aff = _load(_PV5_STUDY, pv5_scan, 'Biped')
+
+    r_rodent = _ncc(ref, _resample_into(rodent, rodent_aff, ref.shape, ref_aff))
+    r_primate = _ncc(ref, _resample_into(primate, primate_aff, ref.shape, ref_aff))
+
+    assert r_rodent > 0.85, f'rodent frame should match PV6 reference, got {r_rodent:.3f}'
+    assert r_rodent > r_primate + 0.5, (
+        f'rodent frame ({r_rodent:.3f}) must clearly beat primate ({r_primate:.3f})')
+
+
+@needs_neworient
+@pytest.mark.parametrize('scan_id', [14, 15])
+def test_slice_orientation_is_world_consistent(scan_id):
+    """Sagittal/coronal must land where axial does.
+
+    Physical placement and subject declaration are constant across the whole
+    study; only slice orientation and readout direction vary. Note the coronal
+    affine is left-handed (det -1) by design -- the coronal 2dseq is stored
+    mirrored and the [1,1,-1] resolution flip compensates -- so this checks the
+    image agrees directly, not merely that the determinants match.
+    """
+    ref, ref_aff = _load(_PV6_STUDY, 13)
+    mov, mov_aff = _load(_PV6_STUDY, scan_id)
+
+    direct = _ncc(ref, _resample_into(mov, mov_aff, ref.shape, ref_aff))
+    flip = np.diag([-1.0, 1, 1, 1])
+    mirrored = _ncc(ref, _resample_into(mov, flip @ mov_aff, ref.shape, ref_aff))
+
+    assert direct > 0.85, f'scan {scan_id} should match axial reference, got {direct:.3f}'
+    assert direct > mirrored, f'scan {scan_id} is mirrored vs the axial reference'

@@ -1130,12 +1130,11 @@ class BrukerLoader():
         if self._override_type is not None: # add option to override
             subj_type = self._override_type
         else:
-            # VisuSubjectType only exists from PV6 onwards; on PV5 fall back to
-            # the study-level SUBJECT_type (which spells bipeds 'Human') rather
-            # than leaving it unknown.
+            # Deliberately NOT falling back to the study-level SUBJECT_type:
+            # PV5 writes 'Human' for every study regardless of specimen, so
+            # reading it would put PV5 rodent data in the primate frame. Absent
+            # here means unknown, handled by uses_quadruped_frame().
             subj_type = get_value(visu_pars, 'VisuSubjectType')
-            if subj_type is None:
-                subj_type = normalize_subject_type(getattr(self._pvobj, 'subj_type', None))
 
         return dict(subject_type = subj_type,
                     subject_position = subj_position,
