@@ -446,7 +446,7 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
         dset.save_as(row.ScanID, row.RecoID, fname, dir=row.Dir, crop=crop, slope=slope, offset=offset)
         if re.search('dwi', row.modality, re.IGNORECASE):
             # DTI parameter (FSL style)
-            dset.save_bdata(row.ScanID, fname, dir=row.Dir)
+            dset.save_bdata(row.ScanID, fname, dir=row.Dir, reco_id=row.RecoID)
         if json_path:
             ref = get_bids_ref_obj(json_path, row)
             if re.search('fieldmap', row.modality, re.IGNORECASE):
@@ -504,6 +504,6 @@ def set_rescale(args):
 def save_meta_files(study, args, scan_id, reco_id, output_fname):
     method = study._pvobj._method[scan_id].parameters['Method']
     if re.search('dti', method, re.IGNORECASE):
-        study.save_bdata(scan_id, output_fname)
+        study.save_bdata(scan_id, output_fname, reco_id=reco_id)
     if args.bids:
         study.save_json(scan_id, reco_id, output_fname)
