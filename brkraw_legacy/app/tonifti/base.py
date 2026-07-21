@@ -235,9 +235,14 @@ class BaseMethods(BaseBufferHandler):
                                                     scanobj=scanobj,
                                                     scale_mode=scale_mode) for nii in niis]
         if isinstance(affine, list):
-            # multi-slicepacks
-            niis = BaseMethods._assemble_ms(dataobj, affine)
-            return niis
+            # multi-slicepacks: one image per package, the data sliced per
+            # package (packages may differ in slice count) so no slices are
+            # dropped -- matching the BrukerLoader path.
+            counts = scanobj.info.slicepack['num_slices_each_pack']
+            niis = BaseMethods._assemble_ms(dataobj, affine, counts)
+            return [BaseMethods.update_nifti1header(nifti1image=nii,
+                                                    scanobj=scanobj,
+                                                    scale_mode=scale_mode) for nii in niis]
         nii = Nifti1Image(dataobj=dataobj, affine=affine)
         return BaseMethods.update_nifti1header(nifti1image=nii,
                                                scanobj=scanobj,
@@ -249,8 +254,16 @@ class BaseMethods(BaseBufferHandler):
         return [Nifti1Image(dataobj=dobj, affine=affine[i]) for i, dobj in enumerate(dataobj)]
 
     @staticmethod
-    def _assemble_ms(dataobj: NDArray, affine: NDArray):
-        return [Nifti1Image(dataobj=dataobj[:,:,i,...], affine=aff) for i, aff in enumerate(affine)]
+    def _assemble_ms(dataobj: NDArray, affine: NDArray, num_slices_each_pack: list):
+        """One image per slice package, sliced from the data with a cumulative
+        offset so packages of differing size (e.g. a 5/3/5 scout) keep all their
+        slices, rather than taking a single slice per affine."""
+        niis = []
+        for i, aff in enumerate(affine):
+            start = sum(num_slices_each_pack[:i])
+            end = start + num_slices_each_pack[i]
+            niis.append(Nifti1Image(dataobj=dataobj[:, :, start:end, ...], affine=aff))
+        return niis
     
     def list_plugin(self):
         avail_dict = self.config.avail('plugin')
