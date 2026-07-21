@@ -121,8 +121,17 @@ class Orientation(BaseHelper):
             raise NotImplementedError
     
     def _case_multi_slicepacks_multi_slices(self):
-        if not self.num_slice_packs % len(self._orient):
-            raise NotImplementedError
+        # This path regroups a flat frame list into packs assuming every pack has
+        # the same number of slices. Packs with unequal slice counts (e.g. a
+        # 13-frame scout grouped [5, 3, 5]) cannot be recovered from the frame
+        # count alone, and silently proceeding mis-groups the frames and crashes
+        # affine assembly downstream. Fail fast with a clear reason instead.
+        # (The BrukerLoader path handles this via VisuCore per-pack slice counts.)
+        if len(self._orient) % self.num_slice_packs:
+            raise NotImplementedError(
+                "Unequal slices per pack is not supported by this path "
+                "({} frames across {} packs); use BrukerLoader for this scan."
+                .format(len(self._orient), self.num_slice_packs))
         start = 0
         num_slices = int(len(self._orient) / self.num_slice_packs)
         orientation = []
@@ -146,9 +155,18 @@ class Orientation(BaseHelper):
         Returns:
             list: x, y, z coordinates of the volume origin
         """
-        position = self._position[0] if isinstance(self._position, list) else self._position
-        position = position[id] if id is not None else position
-        
+        # In the multi-slice-pack/multi-slice case (e.g. a 3-plane localizer),
+        # _case_multi_slicepacks_multi_slices has already regrouped self._position
+        # into a list with one (n_slices, 3) position stack per pack; pick this
+        # pack's stack. Otherwise self._position is the bare (n_frames, 3) array
+        # for the single pack. The previous code hardcoded pack 0 (self._position[0])
+        # and then indexed a slice out of it, collapsing the origin to a scalar and
+        # crashing affine assembly for every pack.
+        if isinstance(self._position, list):
+            position = self._position[id]
+        else:
+            position = self._position
+
         dx, dy, dz = map(lambda x: x.max() - x.min(), position.T)
         max_diff_axis = np.argmax([dx, dy, dz])
 
