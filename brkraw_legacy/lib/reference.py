@@ -177,10 +177,15 @@ COMMON_META_REF = \
          EchoTime                       = dict(TE           = 'VisuAcqEchoTime',
                                                Equation     = 'np.array(TE)/1000'),
          InversionTime                  = 'VisuAcqInversionTime',
+         # Slices per volume is len(ACQ_obj_order) (= NI), NOT VisuCoreFrameCount
+         # (= NI*NR). Using the frame count spread the slice times across every
+         # volume, collapsing them into ~1/NR of TR for any multi-volume (e.g.
+         # fMRI) scan -- exactly where SliceTiming matters most.
+         # NOTE: the [Order] indexing (slice-order direction for interleaved
+         # acquisition) is unchanged here and should be validated separately.
          SliceTiming                    = dict(TR           = 'VisuAcqRepetitionTime',
-                                               Num_of_Slice = 'VisuCoreFrameCount',
                                                Order        = 'ACQ_obj_order',
-                                               Equation     = 'np.linspace(0, TR/1000, Num_of_Slice + 1)[Order]'),
+                                               Equation     = 'np.linspace(0, TR/1000, np.size(Order) + 1)[Order]'),
          SliceEncodingDirection         = [dict(key         = 'VisuAcqGradEncoding',
                                                 where       = 'slice_enc'),
                                            dict(EncSeq      = 'VisuAcqGradEncoding',

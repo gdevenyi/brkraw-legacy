@@ -62,3 +62,33 @@ def test_unused_declared_variable_does_not_suppress_field():
     val = {'X': 'PresentParam', 'Unused': 'MissingParam', 'Equation': 'X * 2'}
     acqp = _p(PresentParam=5)      # MissingParam absent -> Unused resolves to None
     assert meta_check_express(val, acqp, _p(), _p()) == 10
+
+
+# --- SliceTiming (H2) -------------------------------------------------------
+
+def test_slicetiming_spans_full_tr_independent_of_volume_count():
+    """SliceTiming must span [0, TR) per volume, not shrink with NR (H2 regression).
+
+    Previously Num_of_Slice = VisuCoreFrameCount (= NI*NR), so a 100-volume fMRI
+    collapsed the slice times into ~1/100 of TR.
+    """
+    n_slices, n_vol, tr_ms = 20, 100, 2000.0
+    acqp = _p(ACQ_obj_order=list(range(n_slices)))
+    visu = _p(VisuAcqRepetitionTime=tr_ms,
+              VisuCoreFrameCount=n_slices * n_vol)   # the old (wrong) denominator
+    st = np.asarray(_resolve('SliceTiming', acqp=acqp, visu=visu))
+
+    assert st.shape == (n_slices,)
+    assert st.min() == 0.0
+    # sequential: last slice at (N-1)/N * TR, in seconds -- full span, not 1/NR of it
+    assert np.isclose(st.max(), (tr_ms / 1000.0) * (n_slices - 1) / n_slices)
+
+
+def test_slicetiming_follows_interleaved_order():
+    """Interleaved acquisition produces distinct, TR-spanning slice times."""
+    acqp = _p(ACQ_obj_order=[0, 2, 1, 3])          # 4-slice interleaved (from PV data)
+    visu = _p(VisuAcqRepetitionTime=1000.0, VisuCoreFrameCount=4)
+    st = np.asarray(_resolve('SliceTiming', acqp=acqp, visu=visu))
+    assert st.shape == (4,)
+    assert np.isclose(st.max(), 1.0 * 3 / 4)       # spans up to (N-1)/N * TR
+    assert len(set(np.round(st, 6))) == 4          # all four slice times distinct
