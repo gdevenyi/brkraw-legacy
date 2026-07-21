@@ -228,11 +228,12 @@ class BaseMethods(BaseBufferHandler):
                               affine: NDArray,
                               scale_mode: Optional[Literal['header', 'apply']] = None,
                               axis_labels: Optional[list] = None):
-        if not isinstance(dataobj, list) and axis_labels and 'echo' in axis_labels:
+        echo_axis = axis_labels.index('echo') if (axis_labels and 'echo' in axis_labels) else None
+        if not isinstance(dataobj, list) and echo_axis is not None and dataobj.shape[echo_axis] > 1:
             # BIDS emits one file per echo, so split the echo axis into separate
-            # images. Other non-spatial axes (diffusion directions, fMRI cycles,
-            # movie/IR frames) collapse into a single 4D image below.
-            echo_axis = axis_labels.index('echo')
+            # images. A single-echo FG_ECHO group is not multi-echo data and is
+            # left as one volume. Other non-spatial axes (diffusion directions,
+            # fMRI cycles, movie/IR frames) collapse into a single 4D image below.
             dataobj = [np.take(dataobj, e, axis=echo_axis)
                        for e in range(dataobj.shape[echo_axis])]
         if isinstance(dataobj, list):

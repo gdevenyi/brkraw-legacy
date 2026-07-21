@@ -178,3 +178,28 @@ def test_end_to_end_passes_validator(lego_study, tmp_path):
     errors = [it for it in (items or []) if it.get('severity') == 'error']
     assert not errors, 'bids-validator reported errors: {}'.format(
         [(e.get('code'), e.get('subCode')) for e in errors])
+
+
+def test_multiecho_gets_echo_entity(lego_study, tmp_path):
+    """A multi-echo scan converts to one BIDS ``_echo-<n>_`` file per echo.
+
+    Pins the BIDS naming now that image assembly is delegated to app.tonifti:
+    ``is_multi_echo`` and the API's per-echo split must agree so build_bids_json
+    emits ``_echo-1_``, ``_echo-2_``, ... rather than a generic ``-01`` suffix.
+    """
+    import types
+
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.lib.utils import build_bids_json
+
+    d = BrukerLoader(str(lego_study))
+    scan = next((s for s in d.pvobj.avail_scan_id if d.is_multi_echo(s, 1)), None)
+    if scan is None:
+        pytest.skip('no multi-echo scan in sample')
+    n_echo = d.is_multi_echo(scan, 1)
+    row = types.SimpleNamespace(ScanID=scan, RecoID=1, task=None, DataType='anat',
+                                Start=None, End=None, modality='T2starw',
+                                Dir=str(tmp_path), FileName='sub-001', run=None)
+    build_bids_json(d, row, 'sub-001', None)
+    niis = sorted(p.name for p in tmp_path.glob('*.nii.gz'))
+    assert niis == ['sub-001_echo-{}_T2starw.nii.gz'.format(i + 1) for i in range(n_echo)]
