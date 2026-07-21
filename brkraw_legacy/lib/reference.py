@@ -166,11 +166,17 @@ COMMON_META_REF = \
                                                                    idx=[dict(key    = 'VisuAcqGradEncoding',
                                                                              where  = 'phase_enc'),
                                                                         1]),  # PV5.1
-                                               ACCfactor    = 'ACQ_phase_factor',
+                                               # Parallel-imaging (PPI) acceleration, default 1 (none).
+                                               # Was ACQ_phase_factor, which is the RARE/EPI echo-train
+                                               # factor -- not the acceleration -- and wrongly divided EES.
+                                               ACCfactor    = ['PVM_EncPpiAccel1', 1],
                                                Equation     = '(1 / (MatSizePE * BWhzPixel)) / ACCfactor'),  # in second
-         TotalReadoutTime               = dict(ETL          = 'VisuAcqEchoTrainLength',
-                                               BWhzPixel    = 'VisuAcqPixelBandwidth',
-                                               ACCfactor    = 'ACQ_phase_factor',
+         # FSL convention (~ readout dwell time / acceleration). ACCfactor is the
+         # PPI acceleration (default 1), not ACQ_phase_factor; the unused ETL was
+         # dropped. NOTE: the readout-vs-phase bandwidth basis of 1/BWhzPixel
+         # should be validated against a sequence with known echo spacing.
+         TotalReadoutTime               = dict(BWhzPixel    = 'VisuAcqPixelBandwidth',
+                                               ACCfactor    = ['PVM_EncPpiAccel1', 1],
                                                Equation     = '(1 / BWhzPixel) / ACCfactor'),
 
          # TIMING_PARAMETERS
