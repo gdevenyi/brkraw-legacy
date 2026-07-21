@@ -8,6 +8,13 @@ orientation and alignment of imaging data.
 
 from __future__ import annotations
 from brkraw_legacy.api import helper
+from brkraw_legacy.lib.subject_orient import (
+    SUBJECT_TYPES,
+    SUBJECT_POSE,
+    get_pose_rotation,
+    inspect_subject_info,
+    uses_quadruped_frame,
+)
 from .base import BaseAnalyzer
 import numpy as np
 from copy import copy
@@ -17,16 +24,15 @@ if TYPE_CHECKING:
 
 
 SLICEORIENT = {
-    0: 'sagital', 
-    1: 'coronal', 
+    0: 'sagital',
+    1: 'coronal',
     2: 'axial'
     }
 
-SUBJTYPE = ['Biped', 'Quadruped', 'Phantom', 'Other', 'OtherAnimal']
-SUBJPOSE = {
-    'part': ['Head', 'Foot', 'Tail'],
-    'side': ['Supine', 'Prone', 'Left', 'Right']
-}
+# Retained as module-level aliases for backwards compatibility; the canonical
+# definitions live in brkraw_legacy.lib.subject_orient.
+SUBJTYPE = SUBJECT_TYPES
+SUBJPOSE = SUBJECT_POSE
 
 
 class AffineAnalyzer(BaseAnalyzer):
@@ -121,28 +127,11 @@ class AffineAnalyzer(BaseAnalyzer):
     def _est_rotate_angle(subj_pose):
         """Estimate the rotation angle needed based on the subject's pose.
         """
-        rotate_angle = {'rad_x':0, 'rad_y':0, 'rad_z':0}
-        if subj_pose:
-            if subj_pose == 'Head_Supine':
-                rotate_angle['rad_z'] = np.pi
-            elif subj_pose == 'Head_Prone':
-                pass
-            elif subj_pose == 'Head_Left':
-                rotate_angle['rad_z'] = np.pi/2
-            elif subj_pose == 'Head_Right':
-                rotate_angle['rad_z'] = -np.pi/2
-            elif subj_pose in ['Foot_Supine', 'Tail_Supine']:
-                rotate_angle['rad_x'] = np.pi
-            elif subj_pose in ['Foot_Prone', 'Tail_Prone']:
-                rotate_angle['rad_y'] = np.pi
-            elif subj_pose in ['Foot_Left', 'Tail_Left']:
-                rotate_angle['rad_y'] = np.pi
-                rotate_angle['rad_z'] = -np.pi/2
-            elif subj_pose in ['Foot_Right', 'Tail_Right']:
-                rotate_angle['rad_y'] = np.pi
-                rotate_angle['rad_z'] = np.pi/2
-            else:
-                raise NotImplementedError
+        rotate_angle = {'rad_x': 0, 'rad_y': 0, 'rad_z': 0}
+        try:
+            rotate_angle.update(get_pose_rotation(subj_pose))
+        except KeyError:
+            raise NotImplementedError
         return rotate_angle
 
     @classmethod
@@ -152,18 +141,15 @@ class AffineAnalyzer(BaseAnalyzer):
         cls._inspect_subj_info(subj_pose, subj_type)
         rotate_angle = cls._est_rotate_angle(subj_pose)
         affine = helper.rotate_affine(affine, **rotate_angle)
-        
-        if subj_type != 'Biped':
+
+        if uses_quadruped_frame(subj_type):
+            # fixed-frame Primate -> Rodent axis convention change; independent
+            # of subject pose, hence applied after the pose rotation.
             affine = helper.rotate_affine(affine, rad_x=-np.pi/2, rad_y=np.pi)
         return affine
-    
+
     @staticmethod
     def _inspect_subj_info(subj_pose, subj_type):
         """Validate subject type and pose information.
         """
-        if subj_pose:
-            part, side = subj_pose.split('_')
-            assert part in SUBJPOSE['part'], 'Invalid subject position'
-            assert side in SUBJPOSE['side'], 'Invalid subject position'
-        if subj_type:
-            assert subj_type in SUBJTYPE, 'Invalid subject type'
+        inspect_subject_info(subj_pose, subj_type)
