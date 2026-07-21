@@ -118,7 +118,9 @@ class BrukerLoader():
         Args:
             path (str): Path of PvDataset.
         """
+        self._path = path
         self._pvobj = load(path)
+        self._tonifti = None
         self._override_position = None
         self._override_type = None
 
@@ -131,6 +133,34 @@ class BrukerLoader():
     @property
     def pvobj(self):
         return self._pvobj
+
+    @property
+    def _as_tonifti(self):
+        """Lazily bridge to the app.tonifti API (StudyToNifti) so this loader,
+        the BIDS conversion, and the app.tonifti path all share one
+        image-assembly implementation and cannot diverge."""
+        if self._tonifti is None:
+            from brkraw_legacy.app.tonifti import StudyToNifti
+            self._tonifti = StudyToNifti(self._path)
+        return self._tonifti
+
+    def _is_standalone_scan(self):
+        """True for an individually-exported scan directory (``acqp`` at its root
+        and no numbered scan subdirs) -- a shape BrukerLoader loads but the
+        app.tonifti pvobj layer does not yet handle."""
+        p = pathlib.Path(self._path)
+        return (p.is_dir() and (p / 'acqp').exists()
+                and not any(c.is_dir() and c.name.isdigit() for c in p.iterdir()))
+
+    def _assemble_standalone(self, scan_id, reco_id, slope, offset):
+        """Direct NIfTI assembly for a single exported scan (see get_niftiobj)."""
+        from nibabel import Nifti1Image
+        visu_pars = self._get_visu_pars(scan_id, reco_id)
+        method = self._method[scan_id]
+        imgobj = self.get_dataobj(scan_id, reco_id, slope=slope, offset=offset)
+        affine = self._get_affine(visu_pars, method)
+        niiobj = Nifti1Image(imgobj, affine)
+        return self._set_nifti_header(niiobj, visu_pars, method, slope=slope, offset=offset)
 
     @property
     def num_scans(self):
@@ -341,89 +371,29 @@ class BrukerLoader():
     # methods to dump data into file object
     ## - NifTi1
     def get_niftiobj(self, scan_id, reco_id, crop=None, slope=False, offset=False):
-        """ return nibabel nifti object
-        Args:
-            scan_id:
-            reco_id:
-            crop:   frame crop range
-            slope:  if True, slope correction, else, header update
-            offset: if True, offset correction, else, header update
-        Returns:
-            nibabel.Nifti1Image
+        """Return a nibabel Nifti1Image (or a list) for a scan.
+
+        Delegates to the app.tonifti API (StudyToNifti) so this loader/CLI path,
+        the BIDS conversion, and the app.tonifti API share one image-assembly
+        implementation and cannot diverge. ``slope``/``offset`` pick the API
+        scale mode: 'apply' bakes the intensity slope/offset into the data,
+        'header' leaves it in scl_slope/scl_inter (the loader default).
         """
-        from nibabel import Nifti1Image
-        visu_pars = self._get_visu_pars(scan_id, reco_id)
-        if self._get_dim_info(visu_pars)[1] != 'spatial_only':
-            # Spectroscopic / non-image data cannot be represented as a NIfTI image.
-            raise UnexpectedError('ScanID:{} RecoID:{} is non-image data ({}); '
-                                  'skipped for NIfTI conversion.'
-                                  ''.format(scan_id, reco_id,
-                                            self._get_dim_info(visu_pars)[1]))
-        method = self._method[scan_id]
-        affine = self._get_affine(visu_pars, method)
-
-        data_slp, data_off = self._get_dataslp(visu_pars)
-        if isinstance(data_slp, list) and slope is not None:
-            slope = True
-            if isinstance(data_off, list) and offset is not None:
-                offset = True
-
-        imgobj = self.get_dataobj(scan_id, reco_id, slope=slope, offset=offset)
-
-        if isinstance(affine, list):
-            parser = []
-            slice_info = self._get_slice_info(visu_pars)
-            num_slice_packs = slice_info['num_slice_packs']
-
-            num_slices_each_pack = slice_info['num_slices_each_pack']
-            for spack_idx in range(num_slice_packs):
-                # cumulative offset of preceding packs (packs may differ in size)
-                start = sum(num_slices_each_pack[:spack_idx])
-                end = start + num_slices_each_pack[spack_idx]
-                seg_imgobj = imgobj[..., start:end]
-                niiobj = Nifti1Image(seg_imgobj, affine[spack_idx])
-                niiobj = self._set_nifti_header(niiobj, visu_pars, method, slope=slope, offset=offset)
-                parser.append(niiobj)
-            return parser
-        
-        if self.is_multi_echo(scan_id, reco_id):
-            # multi-echo image must be splitted
-            parser = []
-            for e in range(imgobj.shape[-1]):
-                imgobj_ = imgobj[..., e]
-                if len(imgobj_.shape) > 4:
-                    x, y, z = imgobj_.shape[:3]
-                    f = multiply_all(imgobj_.shape[3:])
-                    # all converted nifti must be 4D
-                    imgobj_ = imgobj_.reshape([x, y, z, f])
-                if crop is not None:
-                    if crop[0] is None:
-                        niiobj_ = Nifti1Image(imgobj_[..., :crop[1]], affine)
-                    elif crop[1] is None:
-                        niiobj_ = Nifti1Image(imgobj_[..., crop[0]:], affine)
-                    else:
-                        niiobj_ = Nifti1Image(imgobj_[..., crop[0]:crop[1]], affine)
-                else:
-                    niiobj_ = Nifti1Image(imgobj_, affine)
-                niiobj_ = self._set_nifti_header(niiobj_, visu_pars, method, slope=slope, offset=offset)
-                parser.append(niiobj_)
-            return parser
+        scale_mode = 'apply' if (slope or offset) else 'header'
+        if self._is_standalone_scan():
+            # Individually-exported scan dir (no numbered scans): BrukerLoader
+            # loads it but the app.tonifti pvobj layer does not yet, so assemble
+            # it directly from this loader's dataobj/affine.
+            niiobj = self._assemble_standalone(scan_id, reco_id, slope, offset)
         else:
-            if len(imgobj.shape) > 4:
-                x, y, z = imgobj.shape[:3]
-                f = multiply_all(imgobj.shape[3:])
-                # all converted nifti must be 4D
-                imgobj = imgobj.reshape([x, y, z, f])
+            niiobj = self._as_tonifti.get_nifti1image(scan_id, reco_id, scale_mode=scale_mode)
         if crop is not None:
-            if crop[0] is None:
-                niiobj = Nifti1Image(imgobj[..., :crop[1]], affine)
-            elif crop[1] is None:
-                niiobj = Nifti1Image(imgobj[..., crop[0]:], affine)
-            else:
-                niiobj = Nifti1Image(imgobj[..., crop[0]:crop[1]], affine)
-        else:
-            niiobj = Nifti1Image(imgobj, affine)
-        niiobj = self._set_nifti_header(niiobj, visu_pars, method, slope=slope, offset=offset)
+            from nibabel import Nifti1Image
+            sl = slice(crop[0], crop[1])
+            objs = niiobj if isinstance(niiobj, list) else [niiobj]
+            objs = [Nifti1Image(np.asarray(o.dataobj)[..., sl], o.affine, o.header)
+                    for o in objs]
+            niiobj = objs if isinstance(niiobj, list) else objs[0]
         return niiobj
 
     def get_sitkimg(self, scan_id, reco_id, slope=True, offset=True, is_vector=False):
