@@ -4,6 +4,7 @@ currently not functioning as expected, need to work more
 
 from __future__ import annotations
 import warnings
+import numpy as np
 from nibabel.nifti1 import Nifti1Image
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -63,8 +64,18 @@ class Header:
             
     def _set_scale_params(self):
         if self.scale_mode:
-            self.nifti1image.header.set_slope_inter(slope=self.info.dataarray['slope'],
-                                                    inter=self.info.dataarray['offset'])
+            slope = self.info.dataarray['slope']
+            inter = self.info.dataarray['offset']
+            if np.ndim(slope) or np.ndim(inter):
+                # Per-volume slope/offset (e.g. fMRI) cannot be stored in NIfTI's
+                # scalar scl_slope/scl_inter; leave them at the header default
+                # rather than crashing. Baking per-volume scaling into the data
+                # is a separate concern (the BrukerLoader path does this).
+                warnings.warn(
+                    "Per-volume scale factors are not representable in the NIfTI "
+                    "header; scl_slope/scl_inter left at default.", UserWarning)
+            else:
+                self.nifti1image.header.set_slope_inter(slope=slope, inter=inter)
         self._update_dtype()
 
     def _update_dtype(self):
