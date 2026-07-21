@@ -1,13 +1,13 @@
 """BIDS path-builder and end-to-end conversion tests.
 
-The unit tests exercise ``brkraw_legacy.lib.bids`` directly and need no sample data.
-The end-to-end test is skipped unless a local Bruker dataset and the
-``bids-validator`` (Deno) binary are both available.
+The unit tests exercise ``brkraw_legacy.lib.bids`` directly and need no sample
+data. The end-to-end tests convert a public sample study (lego_phantom); the
+validator check is skipped unless the ``bids-validator`` (Deno) binary is
+available.
 """
 import json
 import shutil
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -80,27 +80,8 @@ def test_label_validation():
 
 
 # --------------------------------------------------------------------------- #
-# End-to-end: convert a local dataset and validate it
+# End-to-end: convert a public dataset and validate it
 # --------------------------------------------------------------------------- #
-
-_TESTDATA = Path(__file__).parents[1] / 'testdata'
-
-
-# Prefer a clean PV6 study with real (non-truncated) image data for the e2e test.
-_PREFERRED = _TESTDATA / 'pv6' / 'full' / 'mch_dev_022'
-
-
-def _find_local_pvdataset():
-    if not _TESTDATA.exists():
-        return None
-    if _PREFERRED.is_dir() and (_PREFERRED / 'subject').exists():
-        return _PREFERRED
-    # fall back to any full study under testdata/<pv>/full/
-    for child in sorted(_TESTDATA.glob('*/full/*')):
-        if child.is_dir() and (child / 'subject').exists():
-            return child
-    return None
-
 
 def _validator_bin():
     return shutil.which('bids-validator-deno') or shutil.which('bids-validator')
@@ -109,12 +90,29 @@ def _validator_bin():
 def _prepare_anat_dataset(pvdir, tmp_path):
     """Run bids_helper, fill in a couple of valid anat rows, and convert.
 
-    The local sample (Bruker FISP) has no auto-classifiable BIDS datatype, so we
-    rewrite two scans as anat/T2starw to exercise a real, validatable conversion.
-    Only the chosen study is exposed (via a symlinked parent) so the helper does
-    not pick up other datasets that share testdata/.
+    The sample scans have no auto-classifiable BIDS datatype, so we rewrite two
+    single-volume 3D scans as anat/T2starw to exercise a real, validatable
+    conversion (multi-slicepack scouts would split into several files and are
+    skipped). Only the chosen study is exposed (via a symlinked parent) so the
+    helper converts just it.
     """
     import pandas as pd
+    from brkraw_legacy import BrukerLoader
+
+    # Pick scans that convert to a single 3D image, so each yields one clean
+    # anat file rather than a per-slicepack _T2starw-01/-02/... split.
+    loader = BrukerLoader(str(pvdir))
+    simple = []
+    for sid in loader.pvobj.avail_scan_id:
+        try:
+            obj = loader.get_niftiobj(sid, 1)
+        except Exception:
+            continue
+        if not isinstance(obj, list) and getattr(obj, 'ndim', 0) == 3:
+            simple.append(sid)
+        if len(simple) >= 2:
+            break
+    assert simple, 'no single-volume 3D scan available for anat conversion'
 
     sample_parent = tmp_path / 'sample'
     sample_parent.mkdir()
@@ -126,11 +124,10 @@ def _prepare_anat_dataset(pvdir, tmp_path):
                            str(sheet), '-j'])
     df = pd.read_csv(str(sheet) + '.csv')
 
-    # First reco of the first two scans -> anat T2starw with distinguishing acq.
+    # First reco of each chosen scan -> anat T2starw with a distinguishing acq.
     first_recos = df[df['RecoID'] == df.groupby('ScanID')['RecoID'].transform('min')]
-    picks = first_recos.drop_duplicates('ScanID').head(2).index
-    assert len(picks) >= 1, 'no scans available in local dataset'
-    df = df.loc[picks].copy()
+    df = first_recos[first_recos['ScanID'].isin(simple)].drop_duplicates('ScanID').copy()
+    assert len(df) >= 1, 'no scans available in dataset'
     df['SubjID'] = '001'
     df['SessID'] = ''
     df['DataType'] = 'anat'
@@ -144,10 +141,8 @@ def _prepare_anat_dataset(pvdir, tmp_path):
     return out
 
 
-@pytest.mark.skipif(_find_local_pvdataset() is None,
-                    reason='no local Bruker dataset under ./testdata')
-def test_end_to_end_bids_convert(tmp_path):
-    out = _prepare_anat_dataset(_find_local_pvdataset(), tmp_path)
+def test_end_to_end_bids_convert(lego_study, tmp_path):
+    out = _prepare_anat_dataset(lego_study, tmp_path)
 
     # dataset_description.json: required keys, correct spelling, modern version
     desc = json.loads((out / 'dataset_description.json').read_text())
@@ -171,10 +166,9 @@ def test_end_to_end_bids_convert(tmp_path):
         assert 'Visu' not in text                       # echoed Bruker param name
 
 
-@pytest.mark.skipif(_validator_bin() is None or _find_local_pvdataset() is None,
-                    reason='bids-validator (deno) or local dataset not available')
-def test_end_to_end_passes_validator(tmp_path):
-    out = _prepare_anat_dataset(_find_local_pvdataset(), tmp_path)
+@pytest.mark.skipif(_validator_bin() is None, reason='bids-validator (deno) not available')
+def test_end_to_end_passes_validator(lego_study, tmp_path):
+    out = _prepare_anat_dataset(lego_study, tmp_path)
 
     proc = subprocess.run([_validator_bin(), str(out), '--json'],
                           capture_output=True, text=True)

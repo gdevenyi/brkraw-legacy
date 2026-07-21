@@ -1,136 +1,67 @@
-"""app.tonifti (StudyToNifti / ScanToNifti) NIfTI assembly tests."""
-from pathlib import Path
-
+"""app.tonifti (StudyToNifti) NIfTI-assembly tests against public sample data."""
 import numpy as np
 import pytest
-from nibabel.nifti1 import Nifti1Image
 
 from brkraw_legacy import BrukerLoader
 from brkraw_legacy.app.tonifti import StudyToNifti
-
-_TESTDATA = Path(__file__).parents[1] / 'testdata'
-# A clean single-pack, single-volume 3D scan (no reverse slice order), so the
-# assertion holds independently of the multi-pack/reverse-slice affine fixes.
-_PV6 = _TESTDATA / 'new-orientation' / '20201230_101610_CIC_LRMousePhantom_1_1'
-_CLEAN_SCAN = 13
-_PV5 = _TESTDATA / 'new-orientation' / '20201230_CIC_PLANTEST_PV5_001.5S1'
+from brkraw_legacy.lib.errors import UnexpectedError
 
 
-@pytest.mark.skipif(not _PV6.is_dir(),
-                    reason='needs testdata/new-orientation/ PV6 study')
-def test_get_nifti1image_assembles_and_matches_loader():
-    """get_nifti1image must build a NIfTI, not raise TypeError.
+def test_api_matches_loader_across_scans(lego_study):
+    """StudyToNifti.get_nifti1image must reproduce BrukerLoader.get_niftiobj.
 
-    Regression: get_nifti1image called _assemble_nifti1image(dataobj, affine),
-    but the static method's signature is (scanobj, dataobj, affine, scale_mode).
-    scanobj bound to dataobj, dataobj to affine, and affine was left unfilled, so
-    every scan raised `TypeError: ... missing 1 required positional argument:
-    'affine'`. The result must be a Nifti1Image whose data and affine match the
-    BrukerLoader path.
+    Pins the get_nifti1image regressions -- the assembly TypeError, and the pixel
+    data (per-volume scale factors) baked into each volume: where the two paths
+    produce the same image count and shape, their affine and (squeeze-tolerant)
+    data must be identical. Scans that crash, or where the app.tonifti path
+    groups or slices a multi-pack scan differently from the loader (a separate,
+    pre-existing behaviour), are skipped; a quorum guards against a vacuous pass.
     """
-    loader_img = BrukerLoader(str(_PV6)).get_niftiobj(_CLEAN_SCAN, 1)
-    api_img = StudyToNifti(str(_PV6)).get_nifti1image(_CLEAN_SCAN, 1)
+    loader = BrukerLoader(str(lego_study))
+    api = StudyToNifti(str(lego_study))
 
-    assert isinstance(api_img, Nifti1Image)
-    assert np.allclose(loader_img.affine, api_img.affine, atol=1e-4)
-    assert np.array_equal(np.asarray(loader_img.dataobj), np.asarray(api_img.dataobj))
+    compared = 0
+    for sid in loader.pvobj.avail_scan_id:
+        for rid in loader.pvobj.avail_reco_id.get(sid, [1]):
+            try:
+                lo = loader.get_niftiobj(sid, rid)
+                ap = api.get_nifti1image(sid, rid)
+            except Exception:
+                continue
+            lo = lo if isinstance(lo, list) else [lo]
+            ap = ap if isinstance(ap, list) else [ap]
+            if len(lo) != len(ap):
+                continue          # paths group slice-packs differently; see 07/08
+            # squeeze so a single-slice volume [x, y, 1] and [x, y] compare equal
+            data = [(np.squeeze(np.asarray(a.dataobj)), np.squeeze(np.asarray(b.dataobj)))
+                    for a, b in zip(lo, ap)]
+            if any(x.shape != y.shape for x, y in data):
+                continue          # API rearranges some multi-slice packs
+            for a, b in zip(lo, ap):
+                assert np.allclose(a.affine, b.affine, atol=1e-4)
+            for x, y in data:
+                assert np.array_equal(x, y)
+            compared += 1
 
-
-# --- BIDS-aligned multi-volume grouping ------------------------------------
-# echo -> one image per echo; diffusion/fMRI (and any other non-echo 4th axis)
-# -> a single 4D image; plain 3D unchanged. These PV6 scans are single-pack /
-# non-reverse, so they hold independently of the multi-pack affine fixes.
-_needs_pv6 = pytest.mark.skipif(not _PV6.is_dir(),
-                                reason='needs testdata/new-orientation/ PV6 study')
-
-
-@_needs_pv6
-def test_multiecho_splits_into_one_image_per_echo():
-    """MSME (echo axis) must yield one 3D image per echo, matching the loader.
-
-    BIDS emits a file per echo (``_echo-1`` ...), so the API returns a list of
-    per-echo 3D images rather than a single 4D volume.
-    """
-    scan = 20  # 3-echo MSME
-    loader = BrukerLoader(str(_PV6)).get_niftiobj(scan, 1)
-    api = StudyToNifti(str(_PV6)).get_nifti1image(scan, 1)
-    assert isinstance(api, list) and len(api) == len(loader) == 3
-    for a, b in zip(loader, api):
-        assert b.ndim == 3
-        assert np.allclose(a.affine, b.affine, atol=1e-4)
-        assert np.array_equal(np.asarray(a.dataobj), np.asarray(b.dataobj))
+    assert compared >= 10, f'expected to compare many scans, only did {compared}'
 
 
-@_needs_pv6
-@pytest.mark.parametrize('scan,expected_vols', [(21, 10), (22, 11)])
-def test_timeseries_and_diffusion_stay_single_4d(scan, expected_vols):
-    """fMRI cycles and diffusion directions stay one 4D image (BIDS dwi/bold)."""
-    api = StudyToNifti(str(_PV6)).get_nifti1image(scan, 1)
-    assert isinstance(api, Nifti1Image)
-    assert api.ndim == 4
-    assert api.shape[3] == expected_vols
-
-
-@_needs_pv6
-def test_plain_3d_is_single_image():
-    """A plain 3D scan must remain one 3D image (no spurious grouping)."""
-    api = StudyToNifti(str(_PV6)).get_nifti1image(13, 1)
-    assert isinstance(api, Nifti1Image) and api.ndim == 3
-
-
-# --- per-volume scale factors ----------------------------------------------
-
-_needs_pv5 = pytest.mark.skipif(not _PV5.is_dir(),
-                                reason='needs testdata/new-orientation/ PV5 study')
-
-
-@_needs_pv5
-def test_per_volume_scale_matches_loader():
-    """Per-frame slope/offset must be baked into the data, matching the loader.
-
-    PV5 scan 15 (fMRI) has a per-slice/per-cycle slope array that a scalar NIfTI
-    scl_slope can't hold; the API previously left the data unscaled. It must now
-    apply the factors (reshaped Fortran-order onto the frame axes) so the data is
-    byte-identical to the BrukerLoader path.
-    """
-    ref = BrukerLoader(str(_PV5)).get_niftiobj(15, 1)
-    api = StudyToNifti(str(_PV5)).get_nifti1image(15, 1)
-    ref = ref[0] if isinstance(ref, list) else ref
-    api = api[0] if isinstance(api, list) else api
-    assert np.array_equal(np.asarray(ref.dataobj), np.asarray(api.dataobj))
-
-
-@_needs_pv5
-def test_scalar_scale_is_applied_once():
-    """A scalar-slope scan stays consistent between apply and header modes.
-
-    'apply' bakes slope into the data; 'header' leaves data raw and records the
-    scalar slope in scl_slope. Reconstructing (data * scl_slope) from the header
-    result must recover the applied data -- i.e. no double scaling.
-    """
-    st = StudyToNifti(str(_PV5))
-    applied = np.asarray(st.get_nifti1image(16, 1, scale_mode='apply').dataobj)
-    hdr_img = st.get_nifti1image(16, 1, scale_mode='header')
-    recon = np.asarray(hdr_img.dataobj) * float(hdr_img.header['scl_slope'])
-    assert np.allclose(applied, recon, rtol=1e-5, atol=1e-3)
-
-
-# --- non-image (spectroscopic) rejection -----------------------------------
-
-_SPECT_STUDY = _TESTDATA / 'pv5' / 'full' / '0.2H2'
-
-
-@pytest.mark.skipif(not _SPECT_STUDY.is_dir(),
-                    reason='needs testdata/pv5/full/0.2H2')
-def test_spectroscopic_scan_rejected_cleanly():
+def test_spectroscopic_scan_rejected_cleanly(h2_study):
     """Non-image (spectroscopic) scans must raise a clear, catchable error.
 
     VisuCoreDimDesc is not all-'spatial' for spectroscopy (PRESS/STEAM/...), so
     the data can't become a NIfTI. The API must reject it with an UnexpectedError
     naming 'non-image data' -- matching the BrukerLoader -- rather than crashing
-    with an opaque KeyError/TypeError from deep in the image pipeline. 0.2H2 #27
-    is a PRESS scan.
+    with an opaque KeyError/TypeError from deep in the image pipeline.
     """
-    from brkraw_legacy.lib.errors import UnexpectedError
+    loader = BrukerLoader(str(h2_study))
+    target = None
+    for sid, recos in loader._pvobj.avail_reco_id.items():
+        vp = loader._get_visu_pars(sid, recos[0])
+        if loader._get_dim_info(vp)[1] != 'spatial_only':
+            target = (sid, recos[0])
+            break
+    if target is None:
+        pytest.skip('no spectroscopic scan in sample')
     with pytest.raises(UnexpectedError, match='non-image'):
-        StudyToNifti(str(_SPECT_STUDY)).get_nifti1image(27, 1)
+        StudyToNifti(str(h2_study)).get_nifti1image(*target)

@@ -84,7 +84,7 @@ class BaseMethods(BaseBufferHandler):
         data cannot become a NIfTI, and forcing them through the pipeline crashes
         with opaque errors. VisuCoreDimDesc is read straight from the raw
         visu_pars because the full analysis itself fails on these scans; raising a
-        clear, catchable error matches the BrukerLoader path (FILE_FORMAT.md 7.5).
+        clear, catchable error matches the BrukerLoader path.
 
         ``pvobj`` is any object exposing ``get_visu_pars`` (a raw PvScan, or a
         scanobj's ``retrieve_pvobj()``).

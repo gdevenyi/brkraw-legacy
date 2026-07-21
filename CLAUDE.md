@@ -16,15 +16,12 @@ uv sync --extra dev           # Also install pytest/ruff/bids-validator (needed 
 uv sync --extra simpleitk     # Also include SimpleITK
 
 # Testing
-make tests/tutorials         # Clone tutorial data (required before running tests)
-uv run pytest                # Run all tests (debug logging enabled by default)
+uv run pytest                       # All tests (sample data auto-fetched from the network)
+uv run pytest -m "not data"         # Only the offline unit tests (no downloads)
 uv run pytest tests/01_api_pvobj_test.py  # Run a single test file
 
 # Linting
 uv run ruff check .            # Uses ruff defaults
-
-# Demo / smoke test
-make demo
 ```
 
 ## Architecture
@@ -57,7 +54,7 @@ Raw Bruker Data (directory or ZIP)
 
 ## Testing
 
-Tests are numbered by layer: `01_api_pvobj`, `02_api_analyzer`, `03_api_helper`, `04_api_data`, `05_app_tonifti`, `06_bids`, `07_conversion`. Some require tutorial sample data — run `make tests/tutorials` first. CI runs on Python 3.11–3.14 across Ubuntu/Windows/macOS.
+Tests are numbered by layer: `01_api_pvobj`, `02_api_analyzer`, `03_api_helper`, `04_api_data`, `05_app_tonifti`, `06_bids`, `07_conversion`, `08_orientation`. Data-dependent tests are marked `data` and fetch public sample data from the network (Zenodo / GitHub), cached under `$BRKRAW_TEST_DATA_DIR`; `pytest -m "not data"` runs only the offline unit tests. CI runs the unit suite on Python 3.11–3.14 across Ubuntu/Windows/macOS and the `data` suite once on Ubuntu.
 
 ## Linting
 

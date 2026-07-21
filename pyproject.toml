@@ -75,3 +75,7 @@ brk-legacy-backup = 'brkraw_legacy.scripts.brk_legacy_backup:main'
 [tool.pytest.ini_options]
 log_cli = true
 log_cli_level = "DEBUG"
+testpaths = ["tests"]
+markers = [
+    "data: needs sample data fetched from the network",
+]

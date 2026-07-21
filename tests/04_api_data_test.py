@@ -1,8 +1,8 @@
-import logging
 from brkraw_legacy.api.data import Study
 
+
 def test_data_init(dataset):
-    for i, pvobj in dataset.items():
-        # if i == 0:
+    """The high-level Study container builds from each study and lists its scans."""
+    for pvobj in dataset.values():
         studyobj = Study(pvobj.path)
-        logging.info(studyobj.info['header']['date'])
+        assert studyobj.avail, 'Study should enumerate available scans'
