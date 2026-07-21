@@ -324,3 +324,70 @@ def test_loader_and_api_paths_agree(study_attr):
         compared += 1
 
     assert compared >= 5, f'expected to compare several scans, only did {compared}'
+
+
+# --- API-path affine assembly (multi-pack / reverse slice order) -----------
+# These pin fixes to AffineAnalyzer._calculate_affine and
+# helper.Orientation._est_volume_origin, which crashed the app.tonifti path on
+# any scan whose first slice pack is index 0 (falsy) or whose slices are stored
+# in reverse order -- while the BrukerLoader path handled them fine.
+
+@needs_neworient
+def test_api_handles_reverse_slice_order():
+    """A reverse-slice-order scan must build an affine, matching the loader.
+
+    PV6 scan 15 (coronal) has reverse_slice_order=True; the API path previously
+    raised `ValueError: setting an array element with a sequence` because it
+    passed the whole slice-distance list where a scalar was required.
+    """
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.app.tonifti import StudyToNifti
+
+    loader = BrukerLoader(str(_PV6_STUDY)).get_affine(15, 1)
+    api = StudyToNifti(str(_PV6_STUDY)).get_affine(15, 1)
+    loader = loader[0] if isinstance(loader, list) else loader
+    api = api[0] if isinstance(api, list) else api
+    assert np.allclose(loader, api, atol=1e-4)
+
+
+@needs_neworient
+def test_api_handles_multislice_localizer():
+    """A multi-slice-pack localizer must yield one proper affine per pack.
+
+    PV6 scan 3 is a 3-plane scout (15 frames -> 3 packs). The API path
+    previously crashed twice: `.index(2)` on the wrong (whole) list for pack 0,
+    then a scalar volume origin from _est_volume_origin. Each pack's affine must
+    be a full 4x4 and match the loader.
+    """
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.app.tonifti import StudyToNifti
+
+    loader = BrukerLoader(str(_PV6_STUDY)).get_affine(3, 1)
+    api = StudyToNifti(str(_PV6_STUDY)).get_affine(3, 1)
+    assert isinstance(api, list) and len(api) == len(loader) > 1
+    for la, aa in zip(loader, api):
+        assert np.shape(aa) == (4, 4)
+        assert np.allclose(la, aa, atol=1e-4)
+
+
+def test_unequal_slices_per_pack_converts():
+    """Unequal per-pack slice counts must convert, matching the loader.
+
+    lego_phantom scan 8 is a 13-frame scout genuinely packed [5, 3, 5]. Both the
+    SlicePack parser (VisuCoreSlicePacksSlices per-pack counts) and the frame
+    regrouping in Orientation must use those counts rather than assuming an equal
+    split; otherwise the API path crashes. Each pack's affine must match the
+    BrukerLoader path exactly. Skip if that corpus is absent.
+    """
+    lego = _TESTDATA / 'pv6' / 'full' / 'lego_phantom'
+    if not lego.is_dir():
+        pytest.skip('no lego_phantom study under ./testdata')
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.app.tonifti import StudyToNifti
+
+    loader = BrukerLoader(str(lego)).get_affine(8, 1)
+    api = StudyToNifti(str(lego)).get_affine(8, 1)
+    assert isinstance(api, list) and len(api) == len(loader) == 3
+    for la, aa in zip(loader, api):
+        assert np.shape(aa) == (4, 4)
+        assert np.allclose(la, aa, atol=1e-4)

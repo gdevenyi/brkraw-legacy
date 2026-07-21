@@ -71,6 +71,7 @@ class Orientation(BaseHelper):
         self._position = visu_pars["VisuCorePosition"]
         self._set_gradient_orient(analobj)
         self.num_slice_packs = info_slicepack['num_slice_packs']
+        self.num_slices_each_pack = info_slicepack['num_slices_each_pack']
         self.gradient_encoding_dir = self._get_gradient_encoding_dir(visu_pars)
         
         self.orientation = []
@@ -121,19 +122,25 @@ class Orientation(BaseHelper):
             raise NotImplementedError
     
     def _case_multi_slicepacks_multi_slices(self):
-        if not self.num_slice_packs % len(self._orient):
-            raise NotImplementedError
+        # Regroup the flat frame list into packs using each pack's own slice
+        # count (VisuCoreSlicePacksSlices), so unequal packs such as a 13-frame
+        # scout grouped [5, 3, 5] are cut correctly rather than assumed equal.
+        counts = self.num_slices_each_pack
+        if sum(counts) != len(self._orient):
+            raise NotImplementedError(
+                "Slice counts per pack {} do not sum to the {} orientation "
+                "frames; use BrukerLoader for this scan."
+                .format(counts, len(self._orient)))
         start = 0
-        num_slices = int(len(self._orient) / self.num_slice_packs)
         orientation = []
         positions = []
-        for _ in range(self.num_slice_packs):
-            ori_stack = self._orient[start:start + num_slices]
-            pos_stack = self._position[start:start + num_slices]
+        for n_slices in counts:
+            ori_stack = self._orient[start:start + n_slices]
+            pos_stack = self._position[start:start + n_slices]
             if is_all_element_same(ori_stack):
                 orientation.append(ori_stack[0])
                 positions.append(pos_stack)
-            start += num_slices
+            start += n_slices
         self._orient = orientation
         self._position = positions
     
@@ -146,9 +153,18 @@ class Orientation(BaseHelper):
         Returns:
             list: x, y, z coordinates of the volume origin
         """
-        position = self._position[0] if isinstance(self._position, list) else self._position
-        position = position[id] if id is not None else position
-        
+        # In the multi-slice-pack/multi-slice case (e.g. a 3-plane localizer),
+        # _case_multi_slicepacks_multi_slices has already regrouped self._position
+        # into a list with one (n_slices, 3) position stack per pack; pick this
+        # pack's stack. Otherwise self._position is the bare (n_frames, 3) array
+        # for the single pack. The previous code hardcoded pack 0 (self._position[0])
+        # and then indexed a slice out of it, collapsing the origin to a scalar and
+        # crashing affine assembly for every pack.
+        if isinstance(self._position, list):
+            position = self._position[id]
+        else:
+            position = self._position
+
         dx, dy, dz = map(lambda x: x.max() - x.min(), position.T)
         max_diff_axis = np.argmax([dx, dy, dz])
 

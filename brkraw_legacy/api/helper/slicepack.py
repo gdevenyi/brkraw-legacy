@@ -92,7 +92,10 @@ class SlicePack(BaseHelper):
         slice_distances_each_pack = []
         if len(slice_fg):
             if slices_desc_in_pack:
-                num_slices_each_pack = [slices_desc_in_pack[0][1] for _ in range(num_slice_packs)]
+                # VisuCoreSlicePacksSlices holds [first_slice_index, count] per
+                # pack; read each pack's own count so unequal packs (e.g. a
+                # [5, 3, 5] scout) are not flattened to the first pack's count.
+                num_slices_each_pack = [slices_desc_in_pack[p][1] for p in range(num_slice_packs)]
             else:
                 num_slices_each_pack = [1]
             if isinstance(slice_distance, list):

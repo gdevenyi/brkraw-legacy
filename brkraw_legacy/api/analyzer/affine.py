@@ -87,18 +87,24 @@ class AffineAnalyzer(BaseAnalyzer):
     def _calculate_affine(self, infoobj: 'ScanInfo', slicepack_id: Optional[int] = None):
         """Calculate the initial affine matrix based on the imaging data and subject orientation.
         """
-        sidx = infoobj.orientation['orientation_desc'][slicepack_id].index(2) \
-            if slicepack_id else infoobj.orientation['orientation_desc'].index(2)
+        # slicepack_id is None for a single-pack scan (orientation/volume_origin
+        # are bare values) and an int for one pack of a multi-pack scan (they are
+        # lists indexed by pack). Test `is not None`, not truthiness: pack 0 is a
+        # real pack, and treating it as the single-pack case reads a list-of-packs
+        # as if it were one pack (crashing on localizers) and, for reverse slice
+        # order, passes the whole distances list where a scalar is required.
+        multi = slicepack_id is not None
+        pack = slicepack_id if multi else 0
+        orient_desc = infoobj.orientation['orientation_desc']
+        sidx = (orient_desc[slicepack_id] if multi else orient_desc).index(2)
         slice_orient = SLICEORIENT[sidx]
-        resol = self.resolution[slicepack_id] \
-            if slicepack_id else self.resolution[0]
+        resol = self.resolution[pack]
         orientation = infoobj.orientation['orientation'][slicepack_id] \
-            if slicepack_id else infoobj.orientation['orientation']
+            if multi else infoobj.orientation['orientation']
         volume_origin = infoobj.orientation['volume_origin'][slicepack_id] \
-            if slicepack_id else infoobj.orientation['volume_origin']
+            if multi else infoobj.orientation['volume_origin']
         if infoobj.slicepack['reverse_slice_order']:
-            slice_distance = infoobj.slicepack['slice_distances_each_pack'][slicepack_id] \
-                if slicepack_id else infoobj.slicepack['slice_distances_each_pack']
+            slice_distance = infoobj.slicepack['slice_distances_each_pack'][pack]
             volume_origin = self._correct_origin(orientation, volume_origin, slice_distance)
         return self._compose_affine(resol, orientation, volume_origin, slice_orient)
     
