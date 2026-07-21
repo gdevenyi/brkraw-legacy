@@ -71,6 +71,7 @@ class Orientation(BaseHelper):
         self._position = visu_pars["VisuCorePosition"]
         self._set_gradient_orient(analobj)
         self.num_slice_packs = info_slicepack['num_slice_packs']
+        self.num_slices_each_pack = info_slicepack['num_slices_each_pack']
         self.gradient_encoding_dir = self._get_gradient_encoding_dir(visu_pars)
         
         self.orientation = []
@@ -121,28 +122,25 @@ class Orientation(BaseHelper):
             raise NotImplementedError
     
     def _case_multi_slicepacks_multi_slices(self):
-        # This path regroups a flat frame list into packs assuming every pack has
-        # the same number of slices. Packs with unequal slice counts (e.g. a
-        # 13-frame scout grouped [5, 3, 5]) cannot be recovered from the frame
-        # count alone, and silently proceeding mis-groups the frames and crashes
-        # affine assembly downstream. Fail fast with a clear reason instead.
-        # (The BrukerLoader path handles this via VisuCore per-pack slice counts.)
-        if len(self._orient) % self.num_slice_packs:
+        # Regroup the flat frame list into packs using each pack's own slice
+        # count (VisuCoreSlicePacksSlices), so unequal packs such as a 13-frame
+        # scout grouped [5, 3, 5] are cut correctly rather than assumed equal.
+        counts = self.num_slices_each_pack
+        if sum(counts) != len(self._orient):
             raise NotImplementedError(
-                "Unequal slices per pack is not supported by this path "
-                "({} frames across {} packs); use BrukerLoader for this scan."
-                .format(len(self._orient), self.num_slice_packs))
+                "Slice counts per pack {} do not sum to the {} orientation "
+                "frames; use BrukerLoader for this scan."
+                .format(counts, len(self._orient)))
         start = 0
-        num_slices = int(len(self._orient) / self.num_slice_packs)
         orientation = []
         positions = []
-        for _ in range(self.num_slice_packs):
-            ori_stack = self._orient[start:start + num_slices]
-            pos_stack = self._position[start:start + num_slices]
+        for n_slices in counts:
+            ori_stack = self._orient[start:start + n_slices]
+            pos_stack = self._position[start:start + n_slices]
             if is_all_element_same(ori_stack):
                 orientation.append(ori_stack[0])
                 positions.append(pos_stack)
-            start += num_slices
+            start += n_slices
         self._orient = orientation
         self._position = positions
     

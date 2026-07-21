@@ -370,17 +370,24 @@ def test_api_handles_multislice_localizer():
         assert np.allclose(la, aa, atol=1e-4)
 
 
-def test_unequal_slices_per_pack_raises_clearly():
-    """Unequal per-pack slice counts must fail with a clear, catchable error.
+def test_unequal_slices_per_pack_converts():
+    """Unequal per-pack slice counts must convert, matching the loader.
 
-    The API path cannot recover unequal packing (e.g. a 13-frame scout grouped
-    [5, 3, 5]) from the frame count alone; it must raise NotImplementedError
-    with an explanation rather than a raw IndexError from downstream assembly.
-    lego_phantom scan 8 is such a scan; skip if that corpus is absent.
+    lego_phantom scan 8 is a 13-frame scout genuinely packed [5, 3, 5]. Both the
+    SlicePack parser (VisuCoreSlicePacksSlices per-pack counts) and the frame
+    regrouping in Orientation must use those counts rather than assuming an equal
+    split; otherwise the API path crashes. Each pack's affine must match the
+    BrukerLoader path exactly. Skip if that corpus is absent.
     """
     lego = _TESTDATA / 'pv6' / 'full' / 'lego_phantom'
     if not lego.is_dir():
         pytest.skip('no lego_phantom study under ./testdata')
+    from brkraw_legacy import BrukerLoader
     from brkraw_legacy.app.tonifti import StudyToNifti
-    with pytest.raises(NotImplementedError, match='[Uu]nequal'):
-        StudyToNifti(str(lego)).get_affine(8, 1)
+
+    loader = BrukerLoader(str(lego)).get_affine(8, 1)
+    api = StudyToNifti(str(lego)).get_affine(8, 1)
+    assert isinstance(api, list) and len(api) == len(loader) == 3
+    for la, aa in zip(loader, api):
+        assert np.shape(aa) == (4, 4)
+        assert np.allclose(la, aa, atol=1e-4)
