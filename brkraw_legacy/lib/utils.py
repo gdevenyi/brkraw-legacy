@@ -286,17 +286,29 @@ def meta_check_index(value, acqp, method, visu_pars):
 
 
 def meta_check_express(value, acqp, method, visu_pars):
-    lcm = locals()
+    # Resolve every non-Equation key to a variable, then eval the Equation
+    # against them. The previous implementation assigned the variables with
+    # exec() into locals() and read the result back from locals(); PEP 667
+    # (Python 3.13+) made locals() a snapshot, so that pathway silently produced
+    # None for every equation-based field (EchoTime, MagneticFieldStrength,
+    # SliceTiming, EffectiveEchoSpacing, TotalReadoutTime, DwellTime, ...).
+    namespace = {}
     for k, v in value.items():
-        if k != 'Equation':
-            exec('global {}'.format(k))
-            val = meta_get_value(v, acqp, method, visu_pars)
-            if isinstance(val, str):
-                val = None
-            exec('{} = {}'.format(k, val))
+        if k == 'Equation':
+            continue
+        val = meta_get_value(v, acqp, method, visu_pars)
+        if isinstance(val, str):
+            val = None
+        namespace[k] = val
+    equation = value['Equation']
+    if any(v is None and re.search(r'\b{}\b'.format(re.escape(k)), equation)
+           for k, v in namespace.items()):
+        # A parameter *used by the equation* is missing; omit the field rather
+        # than evaluating with None (which would emit 'None'/nan into the
+        # sidecar). Unused declared variables do not suppress the field.
+        return None
     try:
-        exec("output = {}".format(value['Equation']), globals(), lcm)
-        return lcm['output']
+        return eval(equation, {'np': np}, namespace)
     except Exception:
         return None
 
