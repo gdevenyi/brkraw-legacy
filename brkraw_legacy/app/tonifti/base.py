@@ -112,7 +112,7 @@ class BaseMethods(BaseBufferHandler):
                                             reco_id=reco_id,
                                             subj_type=subj_type,
                                             subj_position=subj_position)
-        return BaseMethods._assemble_nifti1image(dataobj, affine)
+        return BaseMethods._assemble_nifti1image(scanobj, dataobj, affine, scale_mode)
         
     @staticmethod
     def _bypass_method_via_plugin(scanobj: 'Scan', 
