@@ -113,3 +113,24 @@ def test_scalar_scale_is_applied_once():
     hdr_img = st.get_nifti1image(16, 1, scale_mode='header')
     recon = np.asarray(hdr_img.dataobj) * float(hdr_img.header['scl_slope'])
     assert np.allclose(applied, recon, rtol=1e-5, atol=1e-3)
+
+
+# --- non-image (spectroscopic) rejection -----------------------------------
+
+_SPECT_STUDY = _TESTDATA / 'pv5' / 'full' / '0.2H2'
+
+
+@pytest.mark.skipif(not _SPECT_STUDY.is_dir(),
+                    reason='needs testdata/pv5/full/0.2H2')
+def test_spectroscopic_scan_rejected_cleanly():
+    """Non-image (spectroscopic) scans must raise a clear, catchable error.
+
+    VisuCoreDimDesc is not all-'spatial' for spectroscopy (PRESS/STEAM/...), so
+    the data can't become a NIfTI. The API must reject it with an UnexpectedError
+    naming 'non-image data' -- matching the BrukerLoader -- rather than crashing
+    with an opaque KeyError/TypeError from deep in the image pipeline. 0.2H2 #27
+    is a PRESS scan.
+    """
+    from brkraw_legacy.lib.errors import UnexpectedError
+    with pytest.raises(UnexpectedError, match='non-image'):
+        StudyToNifti(str(_SPECT_STUDY)).get_nifti1image(27, 1)
