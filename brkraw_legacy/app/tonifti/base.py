@@ -29,14 +29,43 @@ class BaseMethods(BaseBufferHandler):
         data_dict = BaseMethods.get_data_dict(scanobj, reco_id)
         dataobj = data_dict['data_array']
         if scale_correction:
-            try:
-                dataobj = dataobj * data_dict['data_slope'] + data_dict['data_offset']
-            except ValueError:
-                warnings.warn(
-                    "Scale correction not applied. The 'slope' and 'offset' provided are not in a tested condition. "
-                    "For further assistance, contact the developer via issue at: https://github.com/gdevenyi/brkraw-legacy.git",
-                    UserWarning)
+            dataobj = BaseMethods._apply_scale(dataobj, data_dict['data_slope'],
+                                               data_dict['data_offset'])
         return dataobj
+
+    @staticmethod
+    def _apply_scale(dataobj: NDArray, slope, offset):
+        """Bake intensity slope/offset into the data array.
+
+        Scalar factors broadcast trivially. Per-frame factors (one value per
+        frame, which the scalar NIfTI scl_slope/scl_inter cannot represent) are
+        reshaped onto the trailing frame axes in Fortran order -- the order
+        get_dataarray reads the 2dseq buffer in -- matching the BrukerLoader
+        scaling. Falls back to leaving the data unscaled (with a warning) if the
+        factors do not map onto the frame axes.
+        """
+        def broadcast(v):
+            v = np.asarray(v)
+            if v.ndim == 0:
+                return v
+            # frames occupy the trailing axes whose product equals v.size
+            k = dataobj.ndim
+            prod = 1
+            while k > 0 and prod < v.size:
+                k -= 1
+                prod *= dataobj.shape[k]
+            frame_shape = dataobj.shape[k:]
+            if int(np.prod(frame_shape)) != v.size:
+                raise ValueError('scale factor size does not map to frame axes')
+            return v.reshape(frame_shape, order='F').reshape((1,) * k + tuple(frame_shape))
+        try:
+            return dataobj * broadcast(slope) + broadcast(offset)
+        except ValueError:
+            warnings.warn(
+                "Scale correction not applied. The 'slope' and 'offset' provided are not in a tested condition. "
+                "For further assistance, contact the developer via issue at: https://github.com/gdevenyi/brkraw-legacy.git",
+                UserWarning)
+            return dataobj
     
     @staticmethod
     def get_affine(scanobj:'Scan', reco_id: Optional[int] = None, 
@@ -104,25 +133,25 @@ class BaseMethods(BaseBufferHandler):
                 return None
         else:
             scale_mode = scale_mode or 'header'
-            scale_correction = 1 if scale_mode == 'apply' else 0
             # Fetch the data dict once (a 2dseq load is not cached) so we get the
             # axis labels alongside the array; the labels drive multi-volume
             # grouping in _assemble_nifti1image.
             data_dict = BaseMethods.get_data_dict(scanobj, reco_id)
             dataobj = data_dict['data_array']
-            if scale_correction:
-                try:
-                    dataobj = dataobj * data_dict['data_slope'] + data_dict['data_offset']
-                except ValueError:
-                    warnings.warn(
-                        "Scale correction not applied. The 'slope' and 'offset' provided are not in a tested condition. "
-                        "For further assistance, contact the developer via issue at: https://github.com/gdevenyi/brkraw-legacy.git",
-                        UserWarning)
+            slope, offset = data_dict['data_slope'], data_dict['data_offset']
+            # Bake scaling into the data when asked ('apply') or when the factors
+            # are per-frame arrays a scalar NIfTI header cannot hold; the header
+            # then stays at default, matching the BrukerLoader path. Scalar
+            # 'header' scaling is left for update_nifti1header to write.
+            header_scale_mode = scale_mode
+            if scale_mode == 'apply' or np.ndim(slope) or np.ndim(offset):
+                dataobj = BaseMethods._apply_scale(dataobj, slope, offset)
+                header_scale_mode = 'apply'
             affine = BaseMethods.get_affine(scanobj=scanobj,
                                             reco_id=reco_id,
                                             subj_type=subj_type,
                                             subj_position=subj_position)
-            return BaseMethods._assemble_nifti1image(scanobj, dataobj, affine, scale_mode,
+            return BaseMethods._assemble_nifti1image(scanobj, dataobj, affine, header_scale_mode,
                                                      axis_labels=data_dict['axis_labels'])
         
     @staticmethod

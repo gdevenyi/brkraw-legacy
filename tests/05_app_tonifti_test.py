@@ -13,6 +13,7 @@ _TESTDATA = Path(__file__).parents[1] / 'testdata'
 # assertion holds independently of the multi-pack/reverse-slice affine fixes.
 _PV6 = _TESTDATA / 'new-orientation' / '20201230_101610_CIC_LRMousePhantom_1_1'
 _CLEAN_SCAN = 13
+_PV5 = _TESTDATA / 'new-orientation' / '20201230_CIC_PLANTEST_PV5_001.5S1'
 
 
 @pytest.mark.skipif(not _PV6.is_dir(),
@@ -75,3 +76,40 @@ def test_plain_3d_is_single_image():
     """A plain 3D scan must remain one 3D image (no spurious grouping)."""
     api = StudyToNifti(str(_PV6)).get_nifti1image(13, 1)
     assert isinstance(api, Nifti1Image) and api.ndim == 3
+
+
+# --- per-volume scale factors ----------------------------------------------
+
+_needs_pv5 = pytest.mark.skipif(not _PV5.is_dir(),
+                                reason='needs testdata/new-orientation/ PV5 study')
+
+
+@_needs_pv5
+def test_per_volume_scale_matches_loader():
+    """Per-frame slope/offset must be baked into the data, matching the loader.
+
+    PV5 scan 15 (fMRI) has a per-slice/per-cycle slope array that a scalar NIfTI
+    scl_slope can't hold; the API previously left the data unscaled. It must now
+    apply the factors (reshaped Fortran-order onto the frame axes) so the data is
+    byte-identical to the BrukerLoader path.
+    """
+    ref = BrukerLoader(str(_PV5)).get_niftiobj(15, 1)
+    api = StudyToNifti(str(_PV5)).get_nifti1image(15, 1)
+    ref = ref[0] if isinstance(ref, list) else ref
+    api = api[0] if isinstance(api, list) else api
+    assert np.array_equal(np.asarray(ref.dataobj), np.asarray(api.dataobj))
+
+
+@_needs_pv5
+def test_scalar_scale_is_applied_once():
+    """A scalar-slope scan stays consistent between apply and header modes.
+
+    'apply' bakes slope into the data; 'header' leaves data raw and records the
+    scalar slope in scl_slope. Reconstructing (data * scl_slope) from the header
+    result must recover the applied data -- i.e. no double scaling.
+    """
+    st = StudyToNifti(str(_PV5))
+    applied = np.asarray(st.get_nifti1image(16, 1, scale_mode='apply').dataobj)
+    hdr_img = st.get_nifti1image(16, 1, scale_mode='header')
+    recon = np.asarray(hdr_img.dataobj) * float(hdr_img.header['scl_slope'])
+    assert np.allclose(applied, recon, rtol=1e-5, atol=1e-3)
