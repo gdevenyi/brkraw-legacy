@@ -30,6 +30,7 @@ class Header:
         self._set_slice_extent()
         self._set_time_step()
         self._set_sform_qform()
+        self._set_cal_and_descrip()
         
     def _set_sliceorder(self):
         # Bruker PVM_ObjOrderScheme -> NIfTI slice_code. Enum spellings are taken
@@ -87,6 +88,26 @@ class Header:
         affine = self.nifti1image.affine
         self.nifti1image.header.set_qform(affine, code=1)
         self.nifti1image.header.set_sform(affine, code=1)
+
+    def _set_cal_and_descrip(self):
+        # cal_min/cal_max give viewers a default display window; NIfTI expects
+        # them in true (post-scaling) units. With scalar scl_slope/scl_inter in
+        # the header the stored data is raw, so scale the min/max to true units
+        # (a negative slope flips the ordering). When scaling is baked into the
+        # data ('apply') or is per-frame, the array already holds true values.
+        self.nifti1image.header['descrip'] = b'brkraw-legacy'
+        data = np.asarray(self.nifti1image.dataobj)
+        if not data.size:
+            return
+        lo, hi = float(np.nanmin(data)), float(np.nanmax(data))
+        if self.scale_mode:
+            slope = self.info.dataarray['slope']
+            inter = self.info.dataarray['offset']
+            if not (np.ndim(slope) or np.ndim(inter)):
+                lo, hi = slope * lo + inter, slope * hi + inter
+                lo, hi = min(lo, hi), max(lo, hi)
+        self.nifti1image.header['cal_min'] = lo
+        self.nifti1image.header['cal_max'] = hi
 
     def _set_scale_params(self):
         if self.scale_mode:
