@@ -53,13 +53,17 @@ class Header:
         self.nifti1image.header['slice_code'] = slice_code
 
     def _set_time_step(self):
-        xyzt_unit = {'cycle':('mm', 'sec')}
+        # Bruker voxel geometry is always in mm; label the spatial units
+        # unconditionally so they are not left NIFTI_UNITS_UNKNOWN. Cine/cycle
+        # data additionally carries a per-volume time step (seconds) on pixdim[4].
         if self.info.cycle['num_cycles'] > 1:
             time_step = self.info.cycle['time_step'] / 1000
             self.nifti1image.header['pixdim'][4] = time_step
             num_slices = self.info.slicepack['num_slices_each_pack'][0]
             self.nifti1image.header['slice_duration'] = time_step / num_slices
-            self.nifti1image.header.set_xyzt_units(*xyzt_unit['cycle'])
+            self.nifti1image.header.set_xyzt_units('mm', 'sec')
+        else:
+            self.nifti1image.header.set_xyzt_units('mm')
             
     def _set_scale_params(self):
         if self.scale_mode:

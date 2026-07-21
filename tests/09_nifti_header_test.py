@@ -50,3 +50,21 @@ def test_slice_code_unknown_scheme_is_zero_and_warns():
     with pytest.warns(UserWarning, match="slice_code"):
         out = _make_header(info)
     assert int(out.header['slice_code']) == 0
+
+
+def test_spatial_units_labelled_mm_without_cycles():
+    """Non-cine scans must still label spatial units as mm (H4 regression).
+
+    Previously set_xyzt_units ran only in the cycle branch, so ordinary
+    anatomical scans were written with NIFTI_UNITS_UNKNOWN.
+    """
+    out = _make_header(_scaninfo(num_cycles=1))
+    assert out.header.get_xyzt_units()[0] == 'mm'
+
+
+def test_units_and_time_step_with_cycles():
+    """Cine/cycle data carries mm + sec and a per-volume time step on pixdim[4]."""
+    out = _make_header(_scaninfo(num_cycles=4, time_step=2000.0, num_slices=10))
+    assert out.header.get_xyzt_units() == ('mm', 'sec')
+    assert float(out.header['pixdim'][4]) == pytest.approx(2.0)      # 2000 ms -> s
+    assert float(out.header['slice_duration']) == pytest.approx(2.0 / 10)
