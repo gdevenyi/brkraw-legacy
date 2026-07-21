@@ -8,14 +8,12 @@ from brkraw_legacy.lib.errors import UnexpectedError
 
 
 def test_api_matches_loader_across_scans(lego_study):
-    """StudyToNifti.get_nifti1image must reproduce BrukerLoader.get_niftiobj.
+    """BrukerLoader.get_niftiobj and StudyToNifti.get_nifti1image are one path.
 
-    Pins the get_nifti1image regressions -- the assembly TypeError, and the pixel
-    data (per-volume scale factors) baked into each volume: where the two paths
-    produce the same image count and shape, their affine and (squeeze-tolerant)
-    data must be identical. Scans that crash, or where the app.tonifti path
-    groups or slices a multi-pack scan differently from the loader (a separate,
-    pre-existing behaviour), are skipped; a quorum guards against a vacuous pass.
+    The loader delegates image assembly to app.tonifti, so the two must produce
+    byte-identical output -- same image count, ndim, affine and data -- for every
+    scan. This pins that delegation (and the shared assembly) against regression;
+    a quorum guards against a vacuous pass.
     """
     loader = BrukerLoader(str(lego_study))
     api = StudyToNifti(str(lego_study))
@@ -30,17 +28,11 @@ def test_api_matches_loader_across_scans(lego_study):
                 continue
             lo = lo if isinstance(lo, list) else [lo]
             ap = ap if isinstance(ap, list) else [ap]
-            if len(lo) != len(ap):
-                continue          # paths group slice-packs differently; see 07/08
-            # squeeze so a single-slice volume [x, y, 1] and [x, y] compare equal
-            data = [(np.squeeze(np.asarray(a.dataobj)), np.squeeze(np.asarray(b.dataobj)))
-                    for a, b in zip(lo, ap)]
-            if any(x.shape != y.shape for x, y in data):
-                continue          # API rearranges some multi-slice packs
+            assert len(lo) == len(ap), f'scan {sid},{rid}: {len(lo)} vs {len(ap)} images'
             for a, b in zip(lo, ap):
+                assert a.ndim == b.ndim
                 assert np.allclose(a.affine, b.affine, atol=1e-4)
-            for x, y in data:
-                assert np.array_equal(x, y)
+                assert np.array_equal(np.asarray(a.dataobj), np.asarray(b.dataobj))
             compared += 1
 
     assert compared >= 10, f'expected to compare many scans, only did {compared}'
