@@ -105,14 +105,25 @@ class BaseMethods(BaseBufferHandler):
         else:
             scale_mode = scale_mode or 'header'
             scale_correction = 1 if scale_mode == 'apply' else 0
-            dataobj = BaseMethods.get_dataobj(scanobj=scanobj, 
-                                              reco_id=reco_id, 
-                                              scale_correction=scale_correction)
+            # Fetch the data dict once (a 2dseq load is not cached) so we get the
+            # axis labels alongside the array; the labels drive multi-volume
+            # grouping in _assemble_nifti1image.
+            data_dict = BaseMethods.get_data_dict(scanobj, reco_id)
+            dataobj = data_dict['data_array']
+            if scale_correction:
+                try:
+                    dataobj = dataobj * data_dict['data_slope'] + data_dict['data_offset']
+                except ValueError:
+                    warnings.warn(
+                        "Scale correction not applied. The 'slope' and 'offset' provided are not in a tested condition. "
+                        "For further assistance, contact the developer via issue at: https://github.com/gdevenyi/brkraw-legacy.git",
+                        UserWarning)
             affine = BaseMethods.get_affine(scanobj=scanobj,
                                             reco_id=reco_id,
                                             subj_type=subj_type,
                                             subj_position=subj_position)
-        return BaseMethods._assemble_nifti1image(scanobj, dataobj, affine, scale_mode)
+            return BaseMethods._assemble_nifti1image(scanobj, dataobj, affine, scale_mode,
+                                                     axis_labels=data_dict['axis_labels'])
         
     @staticmethod
     def _bypass_method_via_plugin(scanobj: 'Scan', 
@@ -151,15 +162,23 @@ class BaseMethods(BaseBufferHandler):
             return name
             
     @staticmethod
-    def _assemble_nifti1image(scanobj: 'Scan', 
-                              dataobj: NDArray, 
+    def _assemble_nifti1image(scanobj: 'Scan',
+                              dataobj: NDArray,
                               affine: NDArray,
-                              scale_mode: Optional[Literal['header', 'apply']] = None):
+                              scale_mode: Optional[Literal['header', 'apply']] = None,
+                              axis_labels: Optional[list] = None):
+        if not isinstance(dataobj, list) and axis_labels and 'echo' in axis_labels:
+            # BIDS emits one file per echo, so split the echo axis into separate
+            # images. Other non-spatial axes (diffusion directions, fMRI cycles)
+            # stay as a single 4D image, per BIDS.
+            echo_axis = axis_labels.index('echo')
+            dataobj = [np.take(dataobj, e, axis=echo_axis)
+                       for e in range(dataobj.shape[echo_axis])]
         if isinstance(dataobj, list):
-            # multi-dataobj (e.g. msme)
+            # one image per volume (e.g. per echo)
             niis = BaseMethods._assemble_msme(dataobj, affine)
-            return [BaseMethods.update_nifti1header(nifti1image=nii, 
-                                                    scanobj=scanobj, 
+            return [BaseMethods.update_nifti1header(nifti1image=nii,
+                                                    scanobj=scanobj,
                                                     scale_mode=scale_mode) for nii in niis]
         if isinstance(affine, list):
             # multi-slicepacks
