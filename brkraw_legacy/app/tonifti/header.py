@@ -28,6 +28,7 @@ class Header:
         self._set_scale_params()
         self._set_sliceorder()
         self._set_time_step()
+        self._set_sform_qform()
         
     def _set_sliceorder(self):
         # Bruker PVM_ObjOrderScheme -> NIfTI slice_code. Enum spellings are taken
@@ -65,6 +66,16 @@ class Header:
         else:
             self.nifti1image.header.set_xyzt_units('mm')
             
+    def _set_sform_qform(self):
+        # A Nifti1Image built from an affine defaults to sform_code=2 (ALIGNED)
+        # with the qform left unset (code 0). This data comes straight off the
+        # scanner, so tag both forms with the same affine and code 1
+        # (NIFTI_XFORM_SCANNER_ANAT): sform-first tools are unaffected, and tools
+        # that honor only the qform now get the correct orientation too.
+        affine = self.nifti1image.affine
+        self.nifti1image.header.set_qform(affine, code=1)
+        self.nifti1image.header.set_sform(affine, code=1)
+
     def _set_scale_params(self):
         if self.scale_mode:
             slope = self.info.dataarray['slope']

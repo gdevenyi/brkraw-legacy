@@ -68,3 +68,23 @@ def test_units_and_time_step_with_cycles():
     assert out.header.get_xyzt_units() == ('mm', 'sec')
     assert float(out.header['pixdim'][4]) == pytest.approx(2.0)      # 2000 ms -> s
     assert float(out.header['slice_duration']) == pytest.approx(2.0 / 10)
+
+
+def test_sform_and_qform_both_scanner_anat(tmp_path):
+    """Both qform and sform are set with the scanner-anat code (M1 regression).
+
+    A from-affine Nifti1Image defaults to sform_code=2 and an unset qform
+    (code 0). These must round-trip through a save as code 1 for both forms,
+    carrying the same affine.
+    """
+    affine = np.diag([0.25, 0.25, 0.6, 1.0])
+    affine[:3, 3] = [-12.0, -9.0, -5.0]
+    out = _make_header(_scaninfo(), affine=affine)
+
+    p = tmp_path / 'x.nii'
+    out.to_filename(str(p))
+    h = nib.load(str(p)).header
+    assert int(h['qform_code']) == 1        # NIFTI_XFORM_SCANNER_ANAT
+    assert int(h['sform_code']) == 1
+    assert np.allclose(h.get_sform(), affine, atol=1e-4)
+    assert np.allclose(h.get_qform(), affine, atol=1e-4)
