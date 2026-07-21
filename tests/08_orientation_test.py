@@ -286,3 +286,41 @@ def test_slice_orientation_is_world_consistent(scan_id):
 
     assert direct > 0.85, f'scan {scan_id} should match axial reference, got {direct:.3f}'
     assert direct > mirrored, f'scan {scan_id} is mirrored vs the axial reference'
+
+
+@needs_neworient
+@pytest.mark.parametrize('study_attr', ['_PV5_STUDY', '_PV6_STUDY'])
+def test_loader_and_api_paths_agree(study_attr):
+    """The BrukerLoader/CLI path and the app.tonifti/API path must agree.
+
+    They source subject type independently -- the loader reads VisuSubjectType
+    in `_get_orient_info`, the API path reads it in `helper.Orientation` -- so a
+    change to one (e.g. re-adding a PV5 SUBJECT_type fallback to only one path)
+    could silently desync them. This pins them together on real data, including
+    the PV5 case where both must resolve the absent type to the rodent frame.
+
+    Some scans hit a pre-existing crash in the API path's `_correct_origin`
+    (reverse slice order), unrelated to orientation; those are skipped, and the
+    test requires a quorum so it cannot pass by comparing nothing.
+    """
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.app.tonifti import StudyToNifti
+
+    study = str(globals()[study_attr])
+    loader = BrukerLoader(study)
+    api = StudyToNifti(study)
+
+    compared = 0
+    for sid in loader.pvobj.avail_scan_id:
+        try:
+            la = loader.get_affine(sid, 1)
+            aa = api.get_affine(sid, 1)
+        except Exception:
+            continue
+        la = la[0] if isinstance(la, list) else la
+        aa = aa[0] if isinstance(aa, list) else aa
+        assert np.allclose(la, aa, atol=1e-6), (
+            f'scan {sid}: loader and API affines differ')
+        compared += 1
+
+    assert compared >= 5, f'expected to compare several scans, only did {compared}'
