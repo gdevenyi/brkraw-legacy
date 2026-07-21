@@ -88,3 +88,15 @@ def test_sform_and_qform_both_scanner_anat(tmp_path):
     assert int(h['sform_code']) == 1
     assert np.allclose(h.get_sform(), affine, atol=1e-4)
     assert np.allclose(h.get_qform(), affine, atol=1e-4)
+
+
+def test_slice_extent_records_axis_and_range():
+    """slice_start/end and the slice axis of dim_info are set (L1 regression).
+
+    Without these, a non-zero slice_code cannot be applied by slice-timing tools.
+    The slice axis is always third; freq/phase are left unset here.
+    """
+    out = _make_header(_scaninfo(), shape=(8, 8, 10))
+    assert out.header.get_dim_info() == (None, None, 2)
+    assert int(out.header['slice_start']) == 0
+    assert int(out.header['slice_end']) == 9        # shape[2] - 1

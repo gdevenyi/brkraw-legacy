@@ -27,6 +27,7 @@ class Header:
         self.nifti1image.header.default_x_flip = False
         self._set_scale_params()
         self._set_sliceorder()
+        self._set_slice_extent()
         self._set_time_step()
         self._set_sform_qform()
         
@@ -52,6 +53,17 @@ class Header:
                 "Please use this header information with care in case slice timing correction is needed."
             )
         self.nifti1image.header['slice_code'] = slice_code
+
+    def _set_slice_extent(self):
+        # A slice_code is inert without the slice axis and the slice range it
+        # applies to. The assembly pipeline always places the slice axis third
+        # (k), spanning the whole volume, so record that. The freq/phase entries
+        # of dim_info are left unset here: mapping them onto the reoriented image
+        # axes belongs with PhaseEncodingDirection, not this field.
+        if self.nifti1image.ndim >= 3:
+            self.nifti1image.header.set_dim_info(slice=2)
+            self.nifti1image.header['slice_start'] = 0
+            self.nifti1image.header['slice_end'] = self.nifti1image.shape[2] - 1
 
     def _set_time_step(self):
         # Bruker voxel geometry is always in mm; label the spatial units
