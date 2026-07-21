@@ -105,10 +105,17 @@ class BaseMethods(BaseBufferHandler):
         datarray_analyzer = scanobj.get_datarray_analyzer(reco_id)
         axis_labels = datarray_analyzer.shape_desc
         dataarray = datarray_analyzer.get_dataarray()
-        slice_axis = axis_labels.index('slice') if 'slice' in axis_labels else 2
-        if slice_axis != 2:
-            dataarray = np.swapaxes(dataarray, slice_axis, 2)
-            axis_labels[slice_axis], axis_labels[2] = axis_labels[2], axis_labels[slice_axis]
+        if 'slice' in axis_labels:
+            slice_axis = axis_labels.index('slice')
+            if slice_axis != 2:
+                dataarray = np.swapaxes(dataarray, slice_axis, 2)
+                axis_labels[slice_axis], axis_labels[2] = axis_labels[2], axis_labels[slice_axis]
+        elif len(axis_labels) > 2 and axis_labels[2] != 'spatial':
+            # A 2D acquisition with frame groups but no FG_SLICE has a single
+            # implicit slice; insert it at the slice axis so frame groups
+            # (echo/movie/IR/...) are not mistaken for slices.
+            dataarray = np.expand_dims(dataarray, 2)
+            axis_labels.insert(2, 'slice')
         return {
             'data_array': dataarray,
             'data_slope': datarray_analyzer.slope,
@@ -223,13 +230,14 @@ class BaseMethods(BaseBufferHandler):
                               axis_labels: Optional[list] = None):
         if not isinstance(dataobj, list) and axis_labels and 'echo' in axis_labels:
             # BIDS emits one file per echo, so split the echo axis into separate
-            # images. Other non-spatial axes (diffusion directions, fMRI cycles)
-            # stay as a single 4D image, per BIDS.
+            # images. Other non-spatial axes (diffusion directions, fMRI cycles,
+            # movie/IR frames) collapse into a single 4D image below.
             echo_axis = axis_labels.index('echo')
             dataobj = [np.take(dataobj, e, axis=echo_axis)
                        for e in range(dataobj.shape[echo_axis])]
         if isinstance(dataobj, list):
-            # one image per volume (e.g. per echo)
+            # one image per echo; collapse any remaining frame axes to 4D
+            dataobj = [BaseMethods._flatten_frames(d) for d in dataobj]
             niis = BaseMethods._assemble_msme(dataobj, affine)
             return [BaseMethods.update_nifti1header(nifti1image=nii,
                                                     scanobj=scanobj,
@@ -243,10 +251,22 @@ class BaseMethods(BaseBufferHandler):
             return [BaseMethods.update_nifti1header(nifti1image=nii,
                                                     scanobj=scanobj,
                                                     scale_mode=scale_mode) for nii in niis]
+        # single image: collapse any frame axes (movie/IR/cycle/diffusion) to 4D
+        dataobj = BaseMethods._flatten_frames(dataobj)
         nii = Nifti1Image(dataobj=dataobj, affine=affine)
         return BaseMethods.update_nifti1header(nifti1image=nii,
                                                scanobj=scanobj,
                                                scale_mode=scale_mode)
+
+    @staticmethod
+    def _flatten_frames(dataobj: NDArray):
+        """Collapse any axes beyond [x, y, slice] into one trailing 4D axis, so
+        multi-frame data (movie/IR/cycle/diffusion) becomes a single 4D image
+        rather than a >4D array. Echo is split into separate images first."""
+        if dataobj.ndim <= 3:
+            return dataobj
+        x, y, z = dataobj.shape[:3]
+        return dataobj.reshape(x, y, z, -1, order='F')
 
     @staticmethod
     def _assemble_msme(dataobj: NDArray, affine: NDArray):
