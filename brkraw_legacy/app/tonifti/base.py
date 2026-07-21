@@ -4,6 +4,7 @@ import numpy as np
 from brkraw_legacy import config
 from nibabel.nifti1 import Nifti1Image
 from .header import Header
+from brkraw_legacy.lib.errors import UnexpectedError
 from brkraw_legacy.api.pvobj.base import BaseBufferHandler
 from brkraw_legacy.api.data import Scan
 from xnippet.snippet import PlugInSnippet
@@ -75,8 +76,32 @@ class BaseMethods(BaseBufferHandler):
                                            subj_type, subj_position)['affine']
     
     @staticmethod
-    def get_data_dict(scanobj: 'Scan', 
+    def _ensure_image_data(pvobj, reco_id: Optional[int] = None):
+        """Reject non-image (spectroscopic/temporal) scans before the image pipeline.
+
+        A frame is a conventional image only when every VisuCoreDimDesc entry is
+        'spatial'. Spectroscopy (PRESS/STEAM/ISIS/NSPECT/CSI/...) and temporal
+        data cannot become a NIfTI, and forcing them through the pipeline crashes
+        with opaque errors. VisuCoreDimDesc is read straight from the raw
+        visu_pars because the full analysis itself fails on these scans; raising a
+        clear, catchable error matches the BrukerLoader path (FILE_FORMAT.md 7.5).
+
+        ``pvobj`` is any object exposing ``get_visu_pars`` (a raw PvScan, or a
+        scanobj's ``retrieve_pvobj()``).
+        """
+        dim_desc = pvobj.get_visu_pars(reco_id).get('VisuCoreDimDesc')
+        if isinstance(dim_desc, str):
+            dim_desc = [dim_desc]
+        non_spatial = [d for d in (dim_desc or []) if d != 'spatial']
+        if non_spatial:
+            raise UnexpectedError(
+                'non-image data (contains {}); skipped for NIfTI conversion'
+                ''.format(', '.join(sorted(set(non_spatial)))))
+
+    @staticmethod
+    def get_data_dict(scanobj: 'Scan',
                       reco_id: Optional[int] = None):
+        BaseMethods._ensure_image_data(scanobj.retrieve_pvobj(), reco_id)
         datarray_analyzer = scanobj.get_datarray_analyzer(reco_id)
         axis_labels = datarray_analyzer.shape_desc
         dataarray = datarray_analyzer.get_dataarray()

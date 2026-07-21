@@ -19,12 +19,16 @@ class StudyToNifti(Study, BaseMethods):
         self.set_scale_mode(scale_mode)
         self._cache = {}
     
-    def get_scan(self, scan_id: int, 
+    def get_scan(self, scan_id: int,
                  reco_id: Optional[int] = None):
         if scan_id not in self._cache.keys():
-            pvscan = super().get_scan(scan_id).retrieve_pvobj()
-            self._cache[scan_id] = ScanToNifti(pvobj=pvscan, 
-                                               reco_id=reco_id, 
+            # PvStudy.get_scan gives the raw pvscan without triggering the full
+            # analysis (which itself crashes on spectroscopic scans). Reject
+            # non-image data here, before that analysis runs.
+            pvscan = super(Study, self).get_scan(scan_id)
+            BaseMethods._ensure_image_data(pvscan, reco_id)
+            self._cache[scan_id] = ScanToNifti(pvobj=pvscan,
+                                               reco_id=reco_id,
                                                study_address=id(self))
         return self._cache[scan_id]
     
