@@ -30,22 +30,21 @@ class Header:
         self._set_time_step()
         
     def _set_sliceorder(self):
-        slice_order_scheme = self.info.slicepack['slice_order_scheme']
-        if slice_order_scheme == 'User_defined_slice_scheme' or slice_order_scheme:
-            slice_code = 0
-        elif slice_order_scheme == 'Sequential':
-            slice_code = 1
-        elif slice_order_scheme == 'Reverse_sequential':
-            slice_code = 2
-        elif slice_order_scheme == 'Interlaced':
-            slice_code = 3
-        elif slice_order_scheme == 'Reverse_interlacesd':
-            slice_code = 4
-        elif slice_order_scheme == 'Angiopraphy':
-            slice_code = 5
-        else:
-            slice_code = 0
-        
+        # Bruker PVM_ObjOrderScheme -> NIfTI slice_code. Enum spellings are taken
+        # verbatim from the ParaVision installs: PV5.1 emits Sequential /
+        # Reverse_sequential / Interlaced, PV6.0.1 emits Sequential /
+        # Reverse_interlaced / Interlaced. Interlaced maps to NIFTI_SLICE_ALT_INC
+        # (even-first); the scheme name alone cannot distinguish ALT_INC from
+        # ALT_INC2 (odd-first), so slice-timing consumers should still cross-check
+        # the acquisition order. Anything unmapped (e.g. User_defined_slice_scheme)
+        # stays 0 = NIFTI_SLICE_UNKNOWN.
+        slice_code = {
+            'Sequential':         1,   # NIFTI_SLICE_SEQ_INC
+            'Reverse_sequential': 2,   # NIFTI_SLICE_SEQ_DEC
+            'Interlaced':         3,   # NIFTI_SLICE_ALT_INC
+            'Reverse_interlaced': 4,   # NIFTI_SLICE_ALT_DEC
+        }.get(self.info.slicepack['slice_order_scheme'], 0)
+
         if slice_code == 0:
             warnings.warn(
                 "Failed to identify compatible 'slice_code'. "
