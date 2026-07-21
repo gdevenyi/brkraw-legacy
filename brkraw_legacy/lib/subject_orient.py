@@ -90,10 +90,10 @@ def uses_quadruped_frame(subj_type):
     study regardless of the actual specimen -- so on PV5 the type is genuinely
     unknown, and preclinical PV5 data is overwhelmingly rodent.
 
-    Verified against ``testdata/new-orientation/``, where the same mouse
-    phantom was scanned head-first prone on both a PV5.1 and a PV6.0.1 system
-    (PV5 declares ``Human``, PV6 declares ``Quadruped``). Resampling the PV5
-    volumes into the PV6 reference grid:
+    Verified against paired PV5.1/PV6.0.1 acquisitions of the same mouse
+    phantom, scanned head-first prone on both systems (PV5 declares ``Human``,
+    PV6 declares ``Quadruped``). Resampling the PV5 volumes into the PV6
+    reference grid:
 
         rodent axes (absent type -> quadruped)   NCC +0.90 .. +0.95
         primate axes (absent type -> biped)      NCC +0.22

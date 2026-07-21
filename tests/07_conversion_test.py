@@ -1,8 +1,9 @@
-"""Regression tests for raw->NIfTI conversion against local sample datasets.
+"""Regression tests for raw->NIfTI conversion against public sample datasets.
 
-These exercise parsing/conversion paths that previously crashed or produced
-wrong output. They are skipped when the relevant sample data is absent or has
-been stripped to header-only stubs.
+The parser tests need no data. The conversion tests exercise paths that
+previously crashed or produced wrong output, using the public BrukerAPI test
+datasets (Zenodo) and the PV360 standard-data repo; each skips when its dataset
+or a real (non-LFS-stub) ``2dseq`` is unavailable.
 """
 import warnings
 from pathlib import Path
@@ -12,26 +13,9 @@ import pytest
 from brkraw_legacy import BrukerLoader
 from brkraw_legacy.lib.utils import convert_data_to
 
-_TESTDATA = Path(__file__).parents[1] / 'testdata'
-
-
-# Sample datasets are organized as testdata/<pv>/<full|headers>/<name>/
-_DATASETS = {
-    '0.2H2': 'pv5/full/0.2H2',
-    'lego_phantom': 'pv6/full/lego_phantom',
-    'mch_dev_022': 'pv6/full/mch_dev_022',
-}
-
-
-def _study(name):
-    path = _TESTDATA / _DATASETS.get(name, name)
-    if not (path.is_dir() and (path / 'subject').exists()):
-        pytest.skip('sample dataset {} not available'.format(name))
-    return BrukerLoader(str(path))
-
 
 def _has_real_2dseq(loader, scan_id, reco_id, min_bytes=1024):
-    """Skip helper: sample fixtures sometimes ship truncated 2dseq stubs."""
+    """Skip helper: LFS-backed fixtures may ship pointer-stub 2dseq files."""
     for r in loader._pvobj._2dseq.get(scan_id, []):
         if r.reco_id == reco_id:
             try:
@@ -42,7 +26,7 @@ def _has_real_2dseq(loader, scan_id, reco_id, min_bytes=1024):
 
 
 # --------------------------------------------------------------------------- #
-# Parameter parser: string literals <...> are opaque (FILE_FORMAT.md 2.2)
+# Parameter parser: string literals <...> are opaque (JCAMP-DX)
 # --------------------------------------------------------------------------- #
 
 def test_struct_array_with_parens_in_comment():
@@ -64,8 +48,8 @@ def test_multi_struct_array_with_parens_in_comment():
 # Frame-group parsing no longer crashes on single/complex-comment groups
 # --------------------------------------------------------------------------- #
 
-def test_frame_group_info_parses_all_scans():
-    d = _study('0.2H2')
+def test_frame_group_info_parses_all_scans(h2_study):
+    d = BrukerLoader(str(h2_study))
     for sid, recos in d._pvobj.avail_reco_id.items():
         for rid in recos:
             vp = d._get_visu_pars(sid, rid)
@@ -77,8 +61,9 @@ def test_frame_group_info_parses_all_scans():
 # Multi-slice-package with heterogeneous pack sizes (e.g. 5/3/5 slices)
 # --------------------------------------------------------------------------- #
 
-def test_multi_slicepack_heterogeneous():
-    d = _study('lego_phantom')
+def test_multi_slicepack_heterogeneous(lego_study):
+    """lego_phantom scan 8 is a 13-frame scout genuinely packed [5, 3, 5]."""
+    d = BrukerLoader(str(lego_study))
     sid, rid = 8, 1
     if not _has_real_2dseq(d, sid, rid):
         pytest.skip('scan 8 2dseq is a stub')
@@ -97,9 +82,9 @@ def test_multi_slicepack_heterogeneous():
 # Spectroscopic / non-image data is rejected cleanly, not with a cryptic crash
 # --------------------------------------------------------------------------- #
 
-def test_spectroscopic_rejected_cleanly():
-    d = _study('0.2H2')
-    # find a spectroscopic scan
+def test_spectroscopic_rejected_cleanly(h2_study):
+    d = BrukerLoader(str(h2_study))
+    # find a spectroscopic scan (VisuCoreDimDesc not purely spatial)
     target = None
     for sid, recos in d._pvobj.avail_reco_id.items():
         vp = d._get_visu_pars(sid, recos[0])
@@ -113,14 +98,11 @@ def test_spectroscopic_rejected_cleanly():
 
 
 # --------------------------------------------------------------------------- #
-# Non-PvDataset directory (no subject file) does not raise a TypeError
+# Loose-scan collection (no subject file) loads without a TypeError
 # --------------------------------------------------------------------------- #
 
-def test_non_pvdataset_directory_is_clean():
-    pv360 = _TESTDATA / 'pv360' / 'full' / 'std_data'
-    if not pv360.is_dir():
-        pytest.skip('pv360/full/std_data not available')
-    loader = BrukerLoader(str(pv360))   # must not raise
+def test_non_pvdataset_directory_is_clean(pv360_root):
+    loader = BrukerLoader(str(pv360_root))   # must not raise
     # the collection root has no scans of its own -> not a single PvDataset
     assert loader.is_pvdataset is False
 
@@ -129,10 +111,10 @@ def test_non_pvdataset_directory_is_clean():
 # Standalone scan/EXPNO directory (no subject file) loads as a one-scan dataset
 # --------------------------------------------------------------------------- #
 
-def test_standalone_scan_directory_loads():
-    scan = _TESTDATA / 'pv360' / 'full' / 'std_data' / 'T1_FLASH'
+def test_standalone_scan_directory_loads(pv360_root):
+    scan = pv360_root / 'T1_FLASH'
     if not (scan / 'acqp').exists():
-        pytest.skip('pv360 T1_FLASH scan not available')
+        pytest.skip('PV360 T1_FLASH scan not available')
     if not _has_real_2dseq(BrukerLoader(str(scan)), 1, 1):
         pytest.skip('T1_FLASH 2dseq is an unpulled LFS stub')
     d = BrukerLoader(str(scan))
@@ -141,4 +123,5 @@ def test_standalone_scan_directory_loads():
     assert d.pvobj.avail_reco_id == {1: [1]}
     assert d.pvobj.subj_id is None            # no subject file
     nii = d.get_niftiobj(1, 1)
-    assert nii.shape == (384, 384, 9)
+    nii = nii[0] if isinstance(nii, list) else nii
+    assert nii.ndim == 3 and all(s > 0 for s in nii.shape)

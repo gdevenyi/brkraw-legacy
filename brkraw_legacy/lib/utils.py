@@ -48,7 +48,7 @@ def load_param(stringlist):
 
 # Sentinels used to hide '(', ')' and ',' that occur *inside* JCAMP-DX string
 # literals (<...>) so the struct/array tokenizer does not treat them as
-# delimiters. See FILE_FORMAT.md 2.2: strings are opaque, enclosed in <...>.
+# delimiters. Per the JCAMP-DX format, strings are opaque, enclosed in <...>.
 _MASK = (('(', '\x01'), (')', '\x02'), (',', '\x03'))
 
 
