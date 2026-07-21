@@ -510,6 +510,8 @@ class BrukerLoader():
         visu_pars = self._get_visu_pars(scan_id, reco_id)
 
         json_obj = dict()
+        # Axis only (i/j/k); the polarity sign (i-/j-/k-) is intentionally not
+        # emitted -- see the PhaseEncodingDirection note in lib/reference.py.
         encdir_dic = {0: 'i', 1: 'j', 2: 'k'}
 
         if metadata is None:

@@ -143,3 +143,20 @@ def test_common_and_fmri_refs_do_not_share_keys():
     """get_bids_ref_obj raises on duplicate keys when merging 'common' and 'func',
     so the two tables must stay disjoint."""
     assert set(COMMON_META_REF) & set(FMRI_META_REF) == set()
+
+
+# --- PhaseEncodingDirection axis (M2) ---------------------------------------
+
+@pytest.mark.parametrize('grad_encoding, axis_index', [
+    (['phase_enc', 'read_enc'], 0),                       # -> 'i' after loader conversion
+    (['read_enc', 'phase_enc'], 1),                       # -> 'j'
+    (['read_enc', 'phase_enc', 'slice_enc'], 1),          # -> 'j' (3D)
+])
+def test_phase_encoding_resolves_axis_index_only(grad_encoding, axis_index):
+    """PhaseEncodingDirection resolves the PE axis index (loader maps it to i/j/k).
+
+    The polarity sign (i-/j-/k-) is intentionally NOT emitted: it cannot be
+    derived reliably from Bruker parameters and a wrong sign harms distortion
+    correction (M2).
+    """
+    assert _resolve('PhaseEncodingDirection', visu=_p(VisuAcqGradEncoding=grad_encoding)) == axis_index

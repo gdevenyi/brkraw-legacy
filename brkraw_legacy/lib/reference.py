@@ -158,6 +158,13 @@ COMMON_META_REF = \
          # per-axis array, which is not directly convertible, so it is left unset.
          PartialFourier                 = None,
          PartialFourierDirection        = None,
+         # Resolves only the phase-encode AXIS (i/j/k), not the polarity sign
+         # (i-/j-/k-). The sign depends on the PE gradient polarity, k-space
+         # traversal, and reconstruction flips relative to the written voxel
+         # frame; it cannot be derived reliably from these parameters alone, and a
+         # WRONG sign makes susceptibility distortion correction worse. It is left
+         # unsigned -- validate/set it per acquisition (e.g. with a reversed-PE
+         # fieldmap) before using it for TOPUP/SDC.
          PhaseEncodingDirection         = [dict(key         = 'VisuAcqGradEncoding',
                                                 where       = 'phase_enc'),
                                            'VisuAcqImagePhaseEncDir'],  # Deprecated
