@@ -12,6 +12,7 @@ Classes:
 
 from __future__ import annotations
 import os
+import codecs
 from zipfile import ZipFile
 from collections import OrderedDict, defaultdict
 from pathlib import Path
@@ -304,6 +305,12 @@ class BaseMethods(BaseBufferHandler):
     def _is_binary(fileobj: PvFileBuffer, bytes: int = 512):
         """Determine if a file is binary by reading a block of data.
 
+        A file is binary if the sampled block holds a null byte or does not
+        decode as UTF-8 text. The null check alone is not enough: a ``2dseq``
+        that fills the field of view has no background voxels, so its first
+        bytes are all nonzero yet still binary. A multibyte character split by
+        the read boundary is tolerated, not treated as binary.
+
         Args:
             fileobj (BufferedReader): The file object to check.
             bytes (int): Number of bytes to read for the check.
@@ -313,4 +320,10 @@ class BaseMethods(BaseBufferHandler):
         """
         block = fileobj.read(bytes)
         fileobj.seek(0)
-        return b'\x00' in block
+        if b'\x00' in block:
+            return True
+        try:
+            codecs.getincrementaldecoder('utf-8')().decode(block, final=False)
+        except UnicodeDecodeError:
+            return True
+        return False
