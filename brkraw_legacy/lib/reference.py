@@ -183,6 +183,12 @@ COMMON_META_REF = \
          EchoTime                       = dict(TE           = 'VisuAcqEchoTime',
                                                Equation     = 'np.array(TE)/1000'),
          InversionTime                  = 'VisuAcqInversionTime',
+         # RepetitionTime is REQUIRED for func and valid for anat/dwi, so emit it
+         # for every scan. It used to live only in FMRI_META_REF, so the one-shot
+         # conversion path (save_json with metadata=None) produced func sidecars
+         # missing this required field.
+         RepetitionTime                 = dict(TR           = 'VisuAcqRepetitionTime',
+                                               Equation     = 'TR/1000'),
          # Slices per volume is len(ACQ_obj_order) (= NI), NOT VisuCoreFrameCount
          # (= NI*NR). Using the frame count spread the slice times across every
          # volume, collapsing them into ~1/NR of TR for any multi-volume (e.g.
@@ -211,8 +217,9 @@ COMMON_META_REF = \
 
 
 FMRI_META_REF = \
-    dict(RepetitionTime                 = dict(TR           = 'VisuAcqRepetitionTime',
-                                               Equation     = 'TR/1000'),
+    dict(  # RepetitionTime now lives in COMMON_META_REF (emitted for every scan);
+           # keeping it out of here avoids a duplicate-key clash when the two-step
+           # template merges 'common' and 'func' (see utils.get_bids_ref_obj).
          VolumeTiming                   = dict(TR           = 'VisuAcqRepetitionTime',
                                                NR           = 'PVM_NRepetitions',
                                                Equation     = '(np.arange(NR)*(TR/1000)).tolist()'),

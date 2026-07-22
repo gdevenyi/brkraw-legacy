@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from brkraw_legacy.lib.reference import COMMON_META_REF
+from brkraw_legacy.lib.reference import COMMON_META_REF, FMRI_META_REF
 from brkraw_legacy.lib.utils import meta_get_value, meta_check_express
 
 
@@ -123,3 +123,23 @@ def test_total_readout_time_ignores_ppi_default_and_missing_etl():
     p = _p(VisuAcqPixelBandwidth=200.0, ACQ_phase_factor=8)  # no ETL, no PPI accel
     trt = _resolve('TotalReadoutTime', visu=p)
     assert trt == pytest.approx(1 / 200)
+
+
+# --- RepetitionTime for func (M5) -------------------------------------------
+
+def test_repetition_time_emitted_for_every_scan():
+    """RepetitionTime is in COMMON_META_REF so the one-shot path emits it (M5).
+
+    It was func-only via FMRI_META_REF, so func sidecars from the one-shot
+    conversion path were missing this BIDS-required field.
+    """
+    assert 'RepetitionTime' in COMMON_META_REF
+    assert 'RepetitionTime' not in FMRI_META_REF
+    rt = _resolve('RepetitionTime', visu=_p(VisuAcqRepetitionTime=2500.0))
+    assert rt == pytest.approx(2.5)                 # ms -> s
+
+
+def test_common_and_fmri_refs_do_not_share_keys():
+    """get_bids_ref_obj raises on duplicate keys when merging 'common' and 'func',
+    so the two tables must stay disjoint."""
+    assert set(COMMON_META_REF) & set(FMRI_META_REF) == set()
