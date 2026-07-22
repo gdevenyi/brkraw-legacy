@@ -1,6 +1,7 @@
 # Bruker ParaVision Raw Data Format
 
-Complete documentation of the Bruker preclinical MRI raw data format as used by ParaVision 5.x and 6.x.
+Complete documentation of the Bruker preclinical MRI raw data format as used by ParaVision 5.x and
+6.x, with version-specific notes for ParaVision 360 (v3.x) and ParaVision 7.0.
 
 This is a generic specification of the format, independent of any particular dataset. It is
 derived from the official Bruker documentation — the File Formats manual (`D01_FileFormats.pdf`
@@ -80,7 +81,7 @@ standard dataset published at
   - [10.4 Image Mapping](#104-image-mapping)
 - [11. GO Parameters (Acquisition/Reconstruction Control)](#11-go-parameters-acquisitionreconstruction-control)
 - [12. Coordinate Systems](#12-coordinate-systems)
-- [13. Version Differences (PV5 vs PV6 vs PV360)](#13-version-differences-pv5-vs-pv6-vs-pv360)
+- [13. Version Differences (PV5 vs PV6 vs PV360 vs PV7)](#13-version-differences-pv5-vs-pv6-vs-pv360-vs-pv7)
 - [14. Worked Examples (Size Calculations)](#14-worked-examples-size-calculations)
 
 ---
@@ -485,7 +486,7 @@ given in [Section 14.4](#144-job-based-raw-data-rawdatajobn).
 > the GO subclass parameters (`GO_raw_data_format`, `GO_block_size`, ...) are **absent**. The
 > per-scan size is taken from `ACQ_jobs[0][0]` (e.g. `ACQ_jobs=( 1 ) (400, 9, 18, ...,
 > <job0>)` -> scan size 400 words), and the raw word type from `ACQ_word_size`/`BYTORDA`. The
-> `ACQ_size[0]` value need not equal the job scan size. See [Section 13](#13-version-differences-pv5-vs-pv6-vs-pv360).
+> `ACQ_size[0]` value need not equal the job scan size. See [Section 13](#13-version-differences-pv5-vs-pv6-vs-pv360-vs-pv7).
 
 > **`fid` and `rawdata.jobN` may coexist:** In PV6 these are not always alternatives. Some
 > methods write **both** - e.g. the spectroscopy methods CSI, NSPECT, PRESS, STEAM and ISIS
@@ -1121,7 +1122,7 @@ The Visu parameter group contains the following subgroups:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `VisuVersion` | int | Visu parameter set version (1 for ParaVision 4/5; 3 for ParaVision 6; 7 or 8 for ParaVision 360 v3.x — e.g. 7 for 360.3.4, 8 for 360.3.6) |
+| `VisuVersion` | int | Visu parameter set version (1 for ParaVision 4/5; 3 for ParaVision 6 and 7.0; 7 or 8 for ParaVision 360 v3.x — e.g. 7 for 360.3.4, 8 for 360.3.6) |
 | `VisuUid` | string | Globally unique dataset identifier (used for DICOM) |
 | `VisuCreator` | string | Creator application(s), semicolon-separated |
 | `VisuCreatorVersion` | string | Creator version(s) |
@@ -1715,7 +1716,7 @@ frame yields the ParaVision-frame equivalent, and vice versa (the matrix is its 
 
 ---
 
-## 13. Version Differences (PV5 vs PV6 vs PV360)
+## 13. Version Differences (PV5 vs PV6 vs PV360 vs PV7)
 
 | Feature | PV5.x | PV6.x |
 |---------|-------|-------|
@@ -1773,6 +1774,31 @@ important ways (cross-referenced against the Bruker-supplied standard dataset
 > storage policy — `storageDataType` (`STORE_32bit_signed` default, or `STORE_64bit_float`),
 > `storeDataMode` (`STORE_processed` default, or `STORE_raw` = stored before averaging), and
 > `normalizeMode` (`NORMALIZE_none` / `NORMALIZE_divide_by_4rg`).
+
+### 13.2 ParaVision 7.0
+
+ParaVision 7.0 is a newer version line (`ACQ_sw_version = <PV-7.0.0>`,
+`VisuCreatorVersion = <7.0.0>`). Unlike ParaVision 360, it is structurally a **continuation of the
+PV6 format** rather than a departure (cross-referenced against the BrukerAPI standard dataset,
+Zenodo [4522220](https://zenodo.org/records/4522220)):
+
+| Feature | ParaVision 7.0 |
+|---------|----------------|
+| Format / hierarchy | JCAMP-DX 4.24; the PV6-style `<DataPath>/<name>/<expno>/pdata/<procno>` layout and `<timestamp>_<name>_<studynr>` study naming |
+| Study-level files | `subject`, `AdjResult/`, `AdjStatePerStudy`, `ResultState`, `ScanProgram.scanProgram` (as PV6) |
+| Raw data | `fid` with the **`GO_*` subclass present** (`GO_raw_data_format`, `GO_block_size`, …) — *not* the job-only PV360 model — plus optional `rawdata.jobN` (with `ACQ_jobs`) for methods that use it; a scan may carry both `fid` and `rawdata.jobN` |
+| `VisuVersion` | `3` (same as PV6) |
+| `d3proc` | Not written (dropped) |
+| New PROCNO file | `pvmeta` — a small native JCAMP parameter file (e.g. `RefCopyId`) alongside `reco`/`methreco`/`visu_pars`; DICOM exports under `pdata/<procno>/dicom/` |
+
+> **Non-native sidecars in public PV7 test data.** The BrukerAPI Zenodo dataset ships companion
+> files that are **not** written by ParaVision and must be ignored by a Bruker parser:
+> `fid.npz` / `2dseq.npz` (NumPy reference arrays) and a few `.json` serializations
+> (`subject.json`, `<expno>/acqp.json`, …) emitted by the `brukerapi-python` library. A reader that
+> keys datasets off the filename stem (see [Section 3.5](#35-method-specific-auxiliary-files))
+> should treat `.npz`/`.json` as non-Bruker and skip them — brkraw-legacy already does, converting
+> the PV7 study with no code changes (all 30 image scans → NIfTI, spectroscopic scans rejected
+> cleanly).
 
 ---
 
