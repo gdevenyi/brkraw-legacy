@@ -48,3 +48,41 @@ def test_scaninfo_analyzer_does_not_leak_fid_handle(tmp_path):
     ScanInfoAnalyzer(pvobj, reco_id=1, debug=True)
 
     assert all(fh.closed for fh in opened), 'fid handle left open'
+
+
+# --------------------------------------------------------------------------- #
+# A derived reconstruction inherits acquisition params it omits (VisuAcq*)
+# --------------------------------------------------------------------------- #
+
+class _TwoRecoPv:
+    """pvobj stand-in with a primary and a derived reconstruction."""
+    avail = [1, 2]
+
+    def __init__(self, primary, derived):
+        self._vp = {1: primary, 2: derived}
+
+    def get_visu_pars(self, reco_id):
+        return self._vp[reco_id]
+
+
+def test_derived_reco_inherits_only_acquisition_params():
+    """A derived reconstruction (e.g. a computed T2/ADC map) inherits the
+    acquisition-level VisuAcq* parameters it omits from the primary reco, while
+    keeping its own reconstruction geometry."""
+    primary = {'VisuAcqGradEncoding': ['read_enc', 'phase_enc'],
+               'VisuAcqImagePhaseEncDir': ['col_dir'],
+               'VisuCoreSize': [256, 256]}
+    derived = {'VisuCoreSize': [128, 128]}   # no VisuAcq*; its own smaller matrix
+
+    ScanInfoAnalyzer._inherit_acq_params(_TwoRecoPv(primary, derived), 2, derived)
+
+    assert derived['VisuAcqGradEncoding'] == ['read_enc', 'phase_enc']  # inherited
+    assert derived['VisuAcqImagePhaseEncDir'] == ['col_dir']            # inherited
+    assert derived['VisuCoreSize'] == [128, 128]                        # kept, not primary's
+
+
+def test_primary_reco_params_untouched():
+    """The primary reconstruction has nothing to inherit and is unchanged."""
+    primary = {'VisuAcqGradEncoding': ['read_enc'], 'VisuCoreSize': [256, 256]}
+    ScanInfoAnalyzer._inherit_acq_params(_TwoRecoPv(primary, {}), 1, primary)
+    assert set(primary) == {'VisuAcqGradEncoding', 'VisuCoreSize'}
