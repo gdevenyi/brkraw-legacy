@@ -26,11 +26,16 @@ class Cycle(BaseHelper):
                              if re.search('cycle', fg, re.IGNORECASE)])
         self.num_cycles = fg_cycle.pop() if len(fg_cycle) else 1
         self.time_step = (scan_time / self.num_cycles)
-    
+        # Sequence repetition time (ms). This is the volume TR that BIDS
+        # RepetitionTime is derived from (VisuAcqRepetitionTime/1000); the NIfTI
+        # header uses it for pixdim[4] so the header and the sidecar agree.
+        self.repetition_time = analobj.visu_pars.get("VisuAcqRepetitionTime")
+
     def get_info(self):
         return {
             "num_cycles": self.num_cycles,
             "time_step": self.time_step,
+            "repetition_time": self.repetition_time,
             "unit": 'msec',
             'warns': self.warns
             }

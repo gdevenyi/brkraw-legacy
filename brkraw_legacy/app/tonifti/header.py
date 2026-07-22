@@ -68,13 +68,27 @@ class Header:
 
     def _set_time_step(self):
         # Bruker voxel geometry is always in mm; label the spatial units
-        # unconditionally so they are not left NIFTI_UNITS_UNKNOWN. Cine/cycle
-        # data additionally carries a per-volume time step (seconds) on pixdim[4].
-        if self.info.cycle['num_cycles'] > 1:
-            time_step = self.info.cycle['time_step'] / 1000
-            self.nifti1image.header['pixdim'][4] = time_step
-            num_slices = self.info.slicepack['num_slices_each_pack'][0]
-            self.nifti1image.header['slice_duration'] = time_step / num_slices
+        # unconditionally so they are not left NIFTI_UNITS_UNKNOWN. A 4D series
+        # additionally carries a per-volume time step (seconds) on pixdim[4].
+        #
+        # The step is the sequence repetition time (VisuAcqRepetitionTime), the
+        # same source BIDS RepetitionTime is derived from, so the NIfTI header and
+        # the JSON sidecar always agree (avoids BIDS REPETITION_TIME_MISMATCH). The
+        # old cycle time_step (VisuAcqScanTime/num_cycles) is a per-cycle interval
+        # that disagrees with RepetitionTime whenever a cycle spans more than one
+        # volume (e.g. tag/control ASL), and it was only applied when a cycle frame
+        # group was detected -- leaving other 4D series with unset time units.
+        if self.nifti1image.ndim >= 4:
+            tr_ms = self.info.cycle.get('repetition_time')
+            # VisuAcqRepetitionTime is a list for variable-TR sequences (e.g. RARE-VTR);
+            # a single pixdim[4] cannot represent that, and the BIDS RepetitionTime
+            # sidecar is likewise omitted, so set the step only for a scalar TR.
+            if isinstance(tr_ms, (int, float, np.integer, np.floating)) and not isinstance(tr_ms, bool):
+                time_step = tr_ms / 1000
+                self.nifti1image.header['pixdim'][4] = time_step
+                num_slices = self.info.slicepack['num_slices_each_pack'][0]
+                if num_slices:
+                    self.nifti1image.header['slice_duration'] = time_step / num_slices
             self.nifti1image.header.set_xyzt_units('mm', 'sec')
         else:
             self.nifti1image.header.set_xyzt_units('mm')
