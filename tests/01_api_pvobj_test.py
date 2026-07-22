@@ -1,7 +1,23 @@
 import io
 import logging
 
+import pytest
+
 from brkraw_legacy.api.pvobj.base import BaseMethods
+
+
+def test_fetch_dir_skips_broken_symlink_with_warning(tmp_path):
+    """A broken symlink -- unfetched git-annex/DataLad content, or a stray
+    .DS_Store -- must not crash directory scanning. It is skipped with a
+    warning, and the parallel files/file_sizes lists stay in sync."""
+    (tmp_path / 'acqp').write_bytes(b'real data')
+    (tmp_path / '.DS_Store').symlink_to(tmp_path / 'no_such_target')  # dangling
+    with pytest.warns(UserWarning, match='broken symlink'):
+        contents = BaseMethods._fetch_dir(tmp_path)
+    entry = contents['.']
+    assert 'acqp' in entry['files']                          # real file kept
+    assert '.DS_Store' not in entry['files']                 # broken one skipped
+    assert len(entry['files']) == len(entry['file_sizes'])   # lists stay in sync
 
 
 def test_loaddata(dataset):
