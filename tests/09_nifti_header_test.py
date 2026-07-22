@@ -50,3 +50,41 @@ def test_slice_code_unknown_scheme_is_zero_and_warns():
     with pytest.warns(UserWarning, match="slice_code"):
         out = _make_header(info)
     assert int(out.header['slice_code']) == 0
+
+
+def test_spatial_units_labelled_mm_without_cycles():
+    """Non-cine scans must still label spatial units as mm (H4 regression).
+
+    Previously set_xyzt_units ran only in the cycle branch, so ordinary
+    anatomical scans were written with NIFTI_UNITS_UNKNOWN.
+    """
+    out = _make_header(_scaninfo(num_cycles=1))
+    assert out.header.get_xyzt_units()[0] == 'mm'
+
+
+def test_units_and_time_step_with_cycles():
+    """Cine/cycle data carries mm + sec and a per-volume time step on pixdim[4]."""
+    out = _make_header(_scaninfo(num_cycles=4, time_step=2000.0, num_slices=10))
+    assert out.header.get_xyzt_units() == ('mm', 'sec')
+    assert float(out.header['pixdim'][4]) == pytest.approx(2.0)      # 2000 ms -> s
+    assert float(out.header['slice_duration']) == pytest.approx(2.0 / 10)
+
+
+def test_sform_and_qform_both_scanner_anat(tmp_path):
+    """Both qform and sform are set with the scanner-anat code (M1 regression).
+
+    A from-affine Nifti1Image defaults to sform_code=2 and an unset qform
+    (code 0). These must round-trip through a save as code 1 for both forms,
+    carrying the same affine.
+    """
+    affine = np.diag([0.25, 0.25, 0.6, 1.0])
+    affine[:3, 3] = [-12.0, -9.0, -5.0]
+    out = _make_header(_scaninfo(), affine=affine)
+
+    p = tmp_path / 'x.nii'
+    out.to_filename(str(p))
+    h = nib.load(str(p)).header
+    assert int(h['qform_code']) == 1        # NIFTI_XFORM_SCANNER_ANAT
+    assert int(h['sform_code']) == 1
+    assert np.allclose(h.get_sform(), affine, atol=1e-4)
+    assert np.allclose(h.get_qform(), affine, atol=1e-4)
