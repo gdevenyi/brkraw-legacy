@@ -158,11 +158,19 @@ class Scan(BaseBufferHandler):
         Returns:
             A DataArrayAnalyzer object initialized with the scan and file information.
         """
-        reco_id = reco_id or self.reco_id
         pvobj = self.retrieve_pvobj()
+        if reco_id:
+            # A specific reconstruction was requested: its parameters (word
+            # type, matrix size, frame count) must be read from that reco's own
+            # info, not the scan's default reco. Mirrors get_affine_analyzer;
+            # without this a derived reco is decoded with the default reco's
+            # dtype and shape and fails to reshape.
+            info = self.get_scaninfo(reco_id)
+        else:
+            reco_id = self.reco_id
+            info = self.info if hasattr(self, 'info') else self.get_scaninfo(reco_id)
         fileobj = pvobj.get_2dseq(reco_id=reco_id)  # type: ignore
         self._buffers.append
-        info = self.info if hasattr(self, 'info') else self.get_scaninfo(reco_id)
         return DataArrayAnalyzer(info, fileobj)  # type: ignore
     
     @property
