@@ -35,13 +35,16 @@ def test_equation_fields_resolve():
     visu = _p(VisuAcqEchoTime=[10.0, 20.0],       # array math: np.array(TE)/1000
               VisuAcqImagingFrequency=400.0,       # scalar math: Freq/42.576
               VisuSystemOrderNumber=12345,         # str(SN)
-              VisuAcqGradEncoding=['read_enc', 'phase_enc', 'slice_enc'])  # len(EncSeq)
+              NSLICES=3)                           # multi-slice -> 'k'
 
     assert np.allclose(_resolve('EchoTime', visu=visu), [0.010, 0.020])
     assert _resolve('MagneticFieldStrength', visu=visu) == pytest.approx(400.0 / 42.576)
     assert _resolve('DeviceSerialNumber', visu=visu) == '12345'
-    # SliceEncodingDirection: 'slice_enc' index (2) OR len(EncSeq); either resolves
-    assert _resolve('SliceEncodingDirection', visu=visu) in (2, 3)
+    # SliceEncodingDirection: brkraw reconstructs slices on the k axis; emit 'k' for
+    # multi-slice data (a BIDS string, not the integer the old mapping produced).
+    assert _resolve('SliceEncodingDirection', visu=visu) == 'k'
+    # single-slice -> omitted (not 'k')
+    assert _resolve('SliceEncodingDirection', visu=_p(NSLICES=1)) is None
 
 
 def test_equation_field_omitted_when_input_missing():
@@ -66,16 +69,16 @@ def test_unused_declared_variable_does_not_suppress_field():
 
 # --- SliceTiming (H2) -------------------------------------------------------
 
-def test_slicetiming_spans_full_tr_independent_of_volume_count():
-    """SliceTiming must span [0, TR) per volume, not shrink with NR (H2 regression).
+def test_slicetiming_spans_full_tr_and_matches_slice_count():
+    """SliceTiming spans [0, TR) per volume and has one entry per slice (NSLICES).
 
-    Previously Num_of_Slice = VisuCoreFrameCount (= NI*NR), so a 100-volume fMRI
-    collapsed the slice times into ~1/100 of TR.
+    The length comes from NSLICES, never VisuCoreFrameCount (= NI*NR), so it does
+    not shrink with the volume count. It is emitted only when the acquisition-order
+    length matches NSLICES.
     """
-    n_slices, n_vol, tr_ms = 20, 100, 2000.0
-    acqp = _p(ACQ_obj_order=list(range(n_slices)))
-    visu = _p(VisuAcqRepetitionTime=tr_ms,
-              VisuCoreFrameCount=n_slices * n_vol)   # the old (wrong) denominator
+    n_slices, tr_ms = 20, 2000.0
+    acqp = _p(ACQ_obj_order=list(range(n_slices)), NSLICES=n_slices)
+    visu = _p(VisuAcqRepetitionTime=tr_ms)
     st = np.asarray(_resolve('SliceTiming', acqp=acqp, visu=visu))
 
     assert st.shape == (n_slices,)
@@ -85,44 +88,100 @@ def test_slicetiming_spans_full_tr_independent_of_volume_count():
 
 
 def test_slicetiming_follows_interleaved_order():
-    """Interleaved acquisition produces distinct, TR-spanning slice times."""
-    acqp = _p(ACQ_obj_order=[0, 2, 1, 3])          # 4-slice interleaved (from PV data)
-    visu = _p(VisuAcqRepetitionTime=1000.0, VisuCoreFrameCount=4)
+    """Interleaved acquisition produces distinct, TR-spanning slice times.
+
+    ACQ_obj_order[slot] = the slice acquired at that slot; argsort inverts it to
+    each slice's acquisition time.
+    """
+    acqp = _p(ACQ_obj_order=[0, 2, 1, 3], NSLICES=4)   # 4-slice interleaved (from PV data)
+    visu = _p(VisuAcqRepetitionTime=1000.0)
     st = np.asarray(_resolve('SliceTiming', acqp=acqp, visu=visu))
     assert st.shape == (4,)
-    assert np.isclose(st.max(), 1.0 * 3 / 4)       # spans up to (N-1)/N * TR
-    assert len(set(np.round(st, 6))) == 4          # all four slice times distinct
+    assert np.allclose(st, [0.0, 0.5, 0.25, 0.75])     # slice s at slot inv[s] * TR/N
+    assert len(set(np.round(st, 6))) == 4              # all four slice times distinct
+
+
+def test_slicetiming_omitted_when_order_length_mismatches_slice_count():
+    """Multi-echo/multi-TI orders have length NSLICES*N != NSLICES -> omit rather
+    than emit a wrong-length (misleading) SliceTiming."""
+    acqp = _p(ACQ_obj_order=list(range(9)), NSLICES=3)  # e.g. 3 slices * 3 echoes
+    assert _resolve('SliceTiming', acqp=acqp, visu=_p(VisuAcqRepetitionTime=1000.0)) is None
+    # single-slice -> omitted too (NSLICES == 1)
+    acqp1 = _p(ACQ_obj_order=0, NSLICES=1)
+    assert _resolve('SliceTiming', acqp=acqp1, visu=_p(VisuAcqRepetitionTime=1000.0)) is None
 
 
 # --- readout timing (M3) ----------------------------------------------------
 
-def test_effective_echo_spacing_uses_ppi_not_echo_train():
-    """EES divides by the PPI acceleration (default 1), not ACQ_phase_factor.
+def test_effective_echo_spacing_from_epi_echo_spacing_not_echo_train():
+    """EES = PVM_EpiEchoSpacing(ms)/1000 / PPI-accel (default 1), not ACQ_phase_factor.
 
-    ACQ_phase_factor is the RARE/EPI echo-train factor; using it wrongly shrank
-    EES by the echo-train length.
+    PVM_EpiEchoSpacing is Bruker's console echo spacing (EPI only); the old
+    1/(EncMatrix*PixelBandwidth) basis returned the ADC sample dwell instead, and
+    ACQ_phase_factor is the echo-train factor, not the parallel acceleration.
     """
-    p = _p(VisuAcqPixelBandwidth=200.0, PVM_EncMatrix=[128, 64],
-           VisuAcqGradEncoding=['read_enc', 'phase_enc'],   # phase_enc index 1 -> MatSizePE=64
-           ACQ_phase_factor=8)                              # must be ignored now
+    p = _p(PVM_EpiEchoSpacing=0.5,        # ms
+           ACQ_phase_factor=8)            # must be ignored
     ees = _resolve('EffectiveEchoSpacing', visu=p)
-    assert ees == pytest.approx(1 / (64 * 200))             # accel defaults to 1, not /8
+    assert ees == pytest.approx(0.5 / 1000.0)               # accel defaults to 1, not /8
 
 
 def test_effective_echo_spacing_scales_with_ppi_accel():
-    p = _p(VisuAcqPixelBandwidth=200.0, PVM_EncMatrix=[128, 64],
-           VisuAcqGradEncoding=['read_enc', 'phase_enc'],
-           PVM_EncPpiAccel1=2)
+    p = _p(PVM_EpiEchoSpacing=0.5, PVM_EncPpiAccel1=2)
     ees = _resolve('EffectiveEchoSpacing', visu=p)
-    assert ees == pytest.approx(1 / (64 * 200) / 2)
+    assert ees == pytest.approx(0.5 / 1000.0 / 2)
 
 
-def test_total_readout_time_ignores_ppi_default_and_missing_etl():
-    """TotalReadoutTime computes without VisuAcqEchoTrainLength (unused ETL dropped)
-    and defaults the acceleration to 1 rather than dividing by ACQ_phase_factor."""
-    p = _p(VisuAcqPixelBandwidth=200.0, ACQ_phase_factor=8)  # no ETL, no PPI accel
+def test_effective_echo_spacing_omitted_for_non_epi():
+    """PVM_EpiEchoSpacing is absent for non-EPI -> EES (an EPI concept) is omitted."""
+    assert _resolve('EffectiveEchoSpacing', visu=_p(VisuAcqPixelBandwidth=200.0)) is None
+
+
+def test_total_readout_time_is_ees_times_recon_pe_minus_one():
+    """FSL/BIDS TotalReadoutTime = EffectiveEchoSpacing * (ReconMatrixPE - 1),
+    ReconMatrixPE = PVM_Matrix on the phase axis; PPI-accel defaults to 1."""
+    p = _p(PVM_EpiEchoSpacing=0.5, PVM_Matrix=[128, 64],
+           VisuAcqGradEncoding=['read_enc', 'phase_enc'],   # phase axis index 1 -> NPE=64
+           ACQ_phase_factor=8)                              # must be ignored
     trt = _resolve('TotalReadoutTime', visu=p)
-    assert trt == pytest.approx(1 / 200)
+    assert trt == pytest.approx((0.5 / 1000.0) * (64 - 1))
+
+
+# --- BIDS type safety (schema-validation errors) ----------------------------
+
+def test_mr_transmit_coil_sequence_is_a_string():
+    """MRTransmitCoilSequence is BIDS type string (DICOM 0018,9049); a nested
+    object (the old dict) is a schema-validation error."""
+    val = _resolve('MRTransmitCoilSequence', visu=_p(VisuCoilTransmitName='RF RES 400'))
+    assert val == 'RF RES 400'
+    assert isinstance(val, str)
+
+
+def test_inversion_time_scalar_is_seconds_array_is_omitted():
+    """InversionTime is a single number in seconds; multi-TI arrays are omitted."""
+    assert _resolve('InversionTime', visu=_p(VisuAcqInversionTime=1000.0)) == pytest.approx(1.0)
+    # multi-TI (Look-Locker) -> not a single number -> omit
+    assert _resolve('InversionTime', visu=_p(VisuAcqInversionTime=[20, 120, 220])) is None
+    # not inversion-prepared -> omit
+    assert _resolve('InversionTime', visu=_p()) is None
+
+
+def test_flip_angle_drops_non_positive():
+    """BIDS requires FlipAngle > 0; a zero/negative value is omitted."""
+    assert _resolve('FlipAngle', visu=_p(VisuAcqFlipAngle=30.0)) == 30.0
+    assert _resolve('FlipAngle', visu=_p(VisuAcqFlipAngle=0)) is None
+
+
+def test_mr_acquisition_type_is_2d_or_3d():
+    """MRAcquisitionType must be the string '2D' or '3D'."""
+    assert _resolve('MRAcquisitionType', visu=_p(PVM_SpatDimEnum='2D')) == '2D'
+    # PV5.1 fallback from the numeric VisuCoreDim
+    assert _resolve('MRAcquisitionType', visu=_p(VisuCoreDim=3)) == '3D'
+
+
+def test_dwell_time_is_inverse_sampling_bandwidth():
+    """DwellTime = 1/PVM_EffSWh (per-point), not 1/PixelBandwidth (whole line)."""
+    assert _resolve('DwellTime', visu=_p(PVM_EffSWh=100000.0)) == pytest.approx(1e-5)
 
 
 # --- RepetitionTime for func (M5) -------------------------------------------
