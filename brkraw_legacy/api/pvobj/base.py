@@ -13,6 +13,7 @@ Classes:
 from __future__ import annotations
 import os
 import codecs
+import warnings
 from zipfile import ZipFile
 from collections import OrderedDict, defaultdict
 from pathlib import Path
@@ -103,8 +104,24 @@ class BaseMethods(BaseBufferHandler):
         for dirpath, dirnames, filenames in os.walk(abspath):
             normalized_dirpath = os.path.normpath(dirpath)
             relative_path = os.path.relpath(normalized_dirpath, abspath)
-            file_sizes = [os.path.getsize(os.path.join(dirpath, f)) for f in filenames]
-            contents[relative_path] = {'dirs': dirnames, 'files': filenames, 
+            files, file_sizes = [], []
+            for f in filenames:
+                try:
+                    size = os.path.getsize(os.path.join(dirpath, f))
+                except OSError:
+                    # A broken symlink or otherwise unreadable entry -- typically
+                    # unfetched git-annex/DataLad content or a stray .DS_Store.
+                    # Skip it (it cannot be read anyway) rather than crash the
+                    # whole scan, but warn so the omission is visible.
+                    warnings.warn(
+                        "Skipping unreadable file '{}': broken symlink or "
+                        "inaccessible (e.g. unfetched git-annex/DataLad content)."
+                        "".format(os.path.join(relative_path, f)),
+                        UserWarning)
+                    continue
+                files.append(f)
+                file_sizes.append(size)
+            contents[relative_path] = {'dirs': dirnames, 'files': files,
                                        'file_indexes': [], 'file_sizes': file_sizes}
         return contents
     
