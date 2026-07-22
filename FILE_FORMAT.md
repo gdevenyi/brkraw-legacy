@@ -13,11 +13,11 @@ file-format manual and the on-disk parameter file disagree on spelling (e.g. the
 `RECO_word_type` vs the stored `RECO_wordtype`), both forms are noted.
 
 The core format (directory layout, JCAMP-DX parameter files, `fid`/`2dseq` binary layouts)
-follows the Bruker manuals and headers. For the sequence-specific auxiliary files that the
-manuals do not cover (e.g. `traj`, navigator and spiral data), the interpretation is
-cross-referenced with the associated I/O library
-[isi-nmr/brukerapi-python](https://github.com/isi-nmr/brukerapi-python). The ParaVision 360
-specifics are cross-referenced against the Bruker-supplied standard dataset published at
+follows the Bruker manuals and headers. The sequence-specific auxiliary files that the
+manuals do not cover (e.g. `traj`, navigator and spiral data) are described from the
+corresponding ParaVision toolbox headers (`PvmTypes/TrajectoryTypes.h`, `SpiralTypes.h`,
+`epiTypes.h`). The ParaVision 360 specifics are cross-referenced against the Bruker-supplied
+standard dataset published at
 [cecilyen/PV360_StdData](https://github.com/cecilyen/PV360_StdData).
 
 ## Table of Contents
@@ -145,7 +145,6 @@ Each experiment directory (numbered starting from 1) contains the acquisition da
     specpar                # Spectrometer parameters
     visu_pars              # (Experiment-level) Visu parameters
     traj                   # k-space trajectory (binary, float64) - non-Cartesian methods (UTE/ZTE/Spiral)
-    AdjStatePerScan/       # Per-scan adjustment state (optional)
     pdata/                 # Processing data directory
         1/                 # First reconstruction (PROCNO=1)
         2/                 # Second reconstruction (optional)
@@ -176,18 +175,20 @@ Each reconstruction directory contains the processed image data:
     methreco               # Method-specific reconstruction input (MethodRecoGroup) [PV6, some reconstructions only]
     id                     # Unique dataset identification (DATASET_ID)
     procs                  # Extra processing parameters (PROC group, for TopSpin)
-    d3proc                 # Legacy image display parameters (D3 group) [PV5 only]
+    d3proc                 # Legacy image display parameters (D3 group) [PV5: every PROCNO; PV6: legacy/derived PROCNOs only]
     meta                   # ParaVision/TopSpin marker via MAGIC NUMBER [PV5, legacy]
     roi                    # Region-of-interest definitions (ROI group)
     isa                    # Image Sequence Analysis tool status (ISA group)
     fun/                   # Functional imaging tool files (directory)
 ```
 
-> **PV5 vs PV6:** `d3proc` and `meta` are written by ParaVision 5.x (the D3 class is
-> deprecated and replaced by Visu parameters). PV6 no longer writes `d3proc` and instead may
-> add `methreco`, but only for reconstructions that have method-specific reco input — many
-> PROCNOs have no `methreco`. The `2dseq`/`reco`/`visu_pars` triple is the minimal,
-> always-present set.
+> **PV5 vs PV6:** In ParaVision 5.x every PROCNO carries a `d3proc` (and a `meta`), as the D3
+> class predates the Visu parameters that supersede it. PV6 drops `meta` and no longer writes
+> `d3proc` for primary reconstructions, but it **still writes `d3proc` for legacy/derived
+> reconstructions** (e.g. secondary `pdata/2` ISA maps — the PV6 File Formats manual lists it as
+> "exists only for legacy datasets"). PV6 may instead add `methreco`, but only for reconstructions
+> that have method-specific reco input — many PROCNOs have no `methreco`. The
+> `2dseq`/`reco`/`visu_pars` triple is the minimal, always-present set.
 
 ---
 
@@ -235,7 +236,7 @@ Parameters can hold the following data types:
 | String | `##$ACQ_scan_name=( 64 ) <RARE_8echo>` |
 | Yes/No | `##$ACQ_SetupRecoDisplay=Yes` |
 | Array | `##$ACQ_size=( 2 ) 200 128` |
-| Struct | `##$ACQ_spatial_phase_1=( 1 ) (<>, 128, 100, ...)` |
+| Struct | `##$ACQ_RfShapes=( 64 ) (<$ExcPulse1Shape>, 14.998, 0, 0.5, 0, ...)` |
 
 Strings are enclosed in angle brackets `<...>`. The empty string is `<>`.
 
@@ -245,7 +246,7 @@ separate human-readable display name:
 
 ```
 ##$parname=<EnumValue>                          # bare symbolic name (usual case)
-##$Method=<Bruker:FLASH>
+##$Method=<Bruker:FLASH>                        # namespaced string value — PV6+/PV360 (PV5.1 writes the bare  ##$Method=FLASH )
 ##$parname=(<EnumValue>, <EnumDisplayName>)     # name + display name (PV6+)
 ##$CONFIG_SCAN_operation_mode=(<$Bis,1,...>, <[1H] TX Volume>)
 ```
@@ -258,9 +259,14 @@ observable on disk or matters for interpretation, their order.
 > **Parsing note — strings are opaque.** The text inside `<...>` is free-form and
 > may contain characters that are otherwise structural, including `(`, `)` and
 > `,`. For example a frame-group comment can read
-> `<T2 relaxation: y=A+C*exp(-t/T2)>`. A parser must mask or skip `<...>` regions
-> before tokenizing parentheses/commas, otherwise the parentheses inside the
-> comment corrupt struct/array splitting.
+> `<T2 relaxation: y=A+C*exp(-t/T2)>`. The robust approach is to mask or skip
+> `<...>` regions before tokenizing parentheses/commas. In practice ParaVision
+> writes struct/array separators as the two-character sequences `", "` and `") "`
+> (a comma or right-paren **followed by a space**) and never puts a space after a
+> comma or paren *inside* `<...>`, so a tokenizer that splits only on those
+> space-delimited separators also parses real files correctly. Such a tokenizer
+> can still be defeated by a `<...>` value that itself contains a literal `", "`
+> or `") "`.
 
 ### 2.3 Array and Struct Encoding
 
@@ -381,6 +387,23 @@ single-channel 32-bit acquisition as the read size grows (overhead is zero only 
 }
 ```
 
+The raw `fid` is a flat sequence of per-scan blocks; each block holds the interleaved
+real/imaginary samples of every active channel and (under `Standard_KBlock_Format`) is padded up
+to the next 1024-byte boundary:
+
+```mermaid
+flowchart TB
+  subgraph FID["fid — per-scan blocks, written in acquisition order"]
+    direction LR
+    B0["scan block 0"] --> B1["scan block 1"] --> Bdots["…"] --> Bn["scan block M-1"]
+  end
+  B0 --> ZOOM
+  subgraph ZOOM["one scan block · GO_block_size = Standard_KBlock_Format"]
+    direction LR
+    CH0["ch 0<br>r i r i … (ACQ_size[0] words)"] --> CH1["ch 1<br>r i r i …"] --> CHd["… Nchan channels"] --> PAD["zero-fill<br>→ next 1024 B"]
+  end
+```
+
 **Data organization & size:** Data is saved in the order of acquisition. The functional order
 (echoes, slices, k-space lines, channels) is sequence-specific and depends on `ACQ_dim`,
 `ACQ_size`, `NI`, `NR`, and the number of active receiver channels. The first array dimension
@@ -402,16 +425,23 @@ GO_block_size = continuous:              blocksize_words = ACQ_size[0] * Nchan
 ```
 
 and `Nchan` is the number of active receiver channels (the count of `Yes` entries in
-`ACQ_ReceiverSelect`). Note that `NI` (number of objects) and the receiver-channel count are
-easily overlooked factors; `ACQ_total_completed` in `acqp` records the total number of scans
-written (`NI * NR * product(ACQ_size[1..])` for standard sequences).
+`ACQ_ReceiverSelect`, equivalently `PVM_EncNReceivers`, with `Nchan = 1` for spectroscopic
+acquisitions). Note that `NI` (number of
+objects) and the receiver-channel count are easily overlooked factors; `ACQ_total_completed` in
+`acqp` records the total number of scans written (`NI * NR * product(ACQ_size[1..])` for standard
+sequences).
+
+> **Encoded matrix vs `ACQ_size`.** The `product(ACQ_size[1..])` factor above is the nominal case.
+> For reduced/partial-Fourier or segmented acquisitions the number of stored higher-dimension
+> blocks follows the *encoded* matrix (`PVM_EncMatrix`, together with per-scheme factors such as
+> `NSegments`, `NPro`, `PVM_NEchoImages`), which can be smaller than `ACQ_size[1..]`; the on-disk
+> block count is therefore derived from those encoding parameters rather than from `ACQ_size`.
 
 ### 3.2 ser - Serial Raw Data (Multiple Experiments)
 
 The `ser` file is the **TopSpin** representation of multi-experiment (serial) raw data. In
 native ParaVision the raw data is written to `fid` and **renamed to `ser` when the experiment
-is exported to TopSpin** (per the Bruker File Formats manual). Many third-party tools,
-including BrkRaw, therefore accept either name.
+is exported to TopSpin** (per the Bruker File Formats manual).
 
 **Location:** `<EXPNO>/ser` (after TopSpin export) or `<EXPNO>/fid` (native ParaVision).
 
@@ -430,6 +460,26 @@ In ParaVision 6.x, raw data storage was reorganized into numbered job files.
 For each defined acquisition job a file is created and filled with the raw data from that job.
 `ACQ_jobs_size` gives the number of jobs and `ACQ_jobs` describes each job's layout
 (e.g. `(0, 1, 0, 1, 64, 100, 0, 0)` in PV6).
+
+Each `ACQ_jobs[n]` is a struct. The ParaVision 360 File Formats manual ("Jobs and Data
+Acquisition") defines its members; on disk the tuple is `(scanSize, …, nStoredScans, chanNum,
+title)` (e.g. the PV360 form `(400, 9, 18, 7776, 101, 74626.9, 2592, 1, <job0>)`):
+
+| Field | Meaning |
+|-------|---------|
+| `scanSize` (first) | Number of **real-valued** points per scan (one `ADC_START`) — twice the complex count; **need not equal `ACQ_size[0]`** |
+| `swh` | Effective sample rate (Hz) after filtering |
+| `receiverGain` | Receiver gain for the job |
+| `nTotalScans` | Total number of scans expected |
+| `nStoredScans` (3rd-from-last) | Scans actually written to the file — drives the on-disk size |
+| `chanNum` (2nd-from-last) | RF channel (1–8) the job is acquired on |
+| `title` (last) | Symbolic job name (`job0` for the main job; also the `rawdata.<title>` suffix) |
+
+The number of **parallel receivers** stored for job *n* is the count of `Yes` entries in
+`ACQ_ReceiverSelect` (equivalently `ACQ_ReceiversSelectPerChannel[chanNum-1]`). Within the file,
+each scan is stored real/imaginary-interleaved, channel-blocked:
+`Re(scan,ch0) Im(scan,ch0) … | Re(scan,ch1) Im(scan,ch1) … | …`. The resulting file size is
+given in [Section 14.4](#144-job-based-raw-data-rawdatajobn).
 
 > **ParaVision 360:** PV360 stores **all** raw data in `rawdata.jobN` (there is no `fid`), and
 > the GO subclass parameters (`GO_raw_data_format`, `GO_block_size`, ...) are **absent**. The
@@ -466,6 +516,21 @@ sequentially, line by line, frame by frame, starting from the top-left pixel of 
 **Complex images:** Unlike the raw data file (real/imag interleaved per point), complex pixel
 values (`RECO_image_type = COMPLEX_IMAGE`) are **not** written interleaved. Instead **all real
 frames are written first, followed by all imaginary frames**, effectively doubling the file size.
+The real and imaginary halves form an `FG_COMPLEX` frame group (the real half precedes the
+imaginary half), consistent with the frame-group ordering declared in `VisuFGOrderDesc`.
+
+```mermaid
+flowchart TB
+  subgraph SEQ["2dseq — frames written contiguously, no zero-fill"]
+    direction LR
+    F0["frame 0<br>rows × cols"] --> F1["frame 1"] --> Fdots["…"] --> Fn["frame VisuCoreFrameCount-1"]
+  end
+  F0 --> CIMG
+  subgraph CIMG["RECO_image_type = COMPLEX_IMAGE · real block then imaginary block"]
+    direction LR
+    RE["all real frames<br>0 … K-1"] --> IM["all imaginary frames<br>0 … K-1"]
+  end
+```
 
 **Data size formula:**
 ```
@@ -473,13 +538,13 @@ size_bytes = sizeof(word) * VisuCoreFrameCount * product(VisuCoreSize[i]) * (2 i
 ```
 Equivalently, in terms of RECO parameters:
 ```
-size_bytes = sizeof(word) * NR * NI * product(RECO_size[i]) * RecoOutputChan * (2 if COMPLEX_IMAGE else 1)
+size_bytes = sizeof(word) * NR * NI * product(RECO_size[i]) * RecoNumOutputChan * (2 if COMPLEX_IMAGE else 1)
 ```
 Where:
 - `sizeof(word)` = 1, 2, or 4 bytes depending on the word type
 - `VisuCoreFrameCount` = total number of frames in the dataset (= `NI * NR * extra loop cycles`)
 - `VisuCoreSize[i]` / `RECO_size[i]` = output matrix size in each dimension
-- `RecoOutputChan` = number of output channels (1 when channels are combined, else `RecoNumInputChan`)
+- `RecoNumOutputChan` = number of output channels (1 when channels are combined, else `RecoNumInputChan`)
 
 For example, a 9-slice 2D magnitude acquisition reconstructed to 256x256, 16-bit, gives
 `2 * 9 * 256 * 256 = 1,179,648` bytes.
@@ -499,10 +564,8 @@ real_value = pixel_value * RECO_map_slope + RECO_map_offset
 The File Formats manual documents only the core data files (`fid`, `2dseq`, `rawdata.jobN`).
 Specific PVM **acquisition methods** additionally write companion binary files alongside the
 `fid`/`rawdata` stream. These are not part of the core spec, are produced only by certain
-sequences, and are summarized here. Their interpretation follows the associated I/O library
-[isi-nmr/brukerapi-python](https://github.com/isi-nmr/brukerapi-python) (which treats several
-of them as first-class dataset types) and the trajectory/spiral/EPI toolbox headers
-(`PvmTypes/TrajectoryTypes.h`, `SpiralTypes.h`, `epiTypes.h`).
+sequences, and are summarized here. Their interpretation follows the trajectory/spiral/EPI
+toolbox headers (`PvmTypes/TrajectoryTypes.h`, `SpiralTypes.h`, `epiTypes.h`).
 
 | File | Produced by | Description |
 |------|-------------|-------------|
@@ -518,7 +581,7 @@ of them as first-class dataset types) and the trajectory/spiral/EPI toolbox head
 > (e.g. `rawdata.job0`, `rawdata.Navigator`, `fid.spiral`). The raw-data dtype is always taken
 > from `GO_raw_data_format` + `BYTORDA`, and the on-disk array is stored in column-major
 > (Fortran) order. The `fid` data layout (and thus the meaning of the raw block sequence)
-> depends on the pulse program (`PULPROG`); brukerapi classifies it into schemes such as
+> depends on the pulse program (`PULPROG`), which determines the k-space acquisition scheme, e.g.
 > `CART_2D`, `CART_3D`, `RADIAL`, `SPIRAL`, `ZTE`, `EPI`, `dEPI`, `SPECTROSCOPY`, `CSI`, and
 > `FIELD_MAP`.
 
@@ -537,7 +600,7 @@ Contains subject/patient demographic information. Key parameters:
 | `SUBJECT_name_string` | Subject name |
 | `SUBJECT_study_name` | Study name |
 | `SUBJECT_date` | Study date |
-| `SUBJECT_type` | Subject type (Biped, Quadruped, Phantom, etc.) |
+| `SUBJECT_type` | Subject type (version-dependent enum — PV5: `Human`/`Animal`/`Phantom`/`Other`; PV6+/360: `Biped`/`Quadruped`/`Phantom`/`Other`/`OtherAnimal`; see [Section 9](#9-subject-file)) |
 | `SUBJECT_sex` | Subject sex |
 | `SUBJECT_weight` | Subject weight |
 | `SUBJECT_position` | Subject position in magnet |
@@ -586,7 +649,7 @@ The acquisition loop generates `NI * NR` "objects" (images). The key loop parame
 | `NI` | int | Number of objects per repetition |
 | `NR` | int | Number of repetitions |
 | `NA` | int | Number of accumulations (signal averages) |
-| `NAE` | int | Number of averaged experiments |
+| `NAE` | int | Number of accumulated experiments |
 | `DS` | int | Number of dummy scans (discarded) |
 | `NSLICES` | int | Number of slices |
 | `ACQ_n_echo_images` | int | Number of echo images |
@@ -598,9 +661,30 @@ The acquisition loop generates `NI * NR` "objects" (images). The key loop parame
 NI * NR = NSLICES * ACQ_n_echo_images * ACQ_n_movie_frames * integer(cycles)
 ```
 
+```mermaid
+flowchart LR
+  SL["NSLICES"] --> P(("×"))
+  EC["ACQ_n_echo_images"] --> P
+  MV["ACQ_n_movie_frames"] --> P
+  CY["integer(cycles)<br>method-specific"] --> P
+  P --> OBJ["NI × NR objects<br>one image each"]
+```
+
 Where `integer(cycles)` represents additional loop cycles from method-specific parameters.
 
 **Object ordering:** The parameter `ACQ_obj_order` (int array of length NI) specifies the order in which objects are acquired. For example, interleaved slice acquisition reorders slices so that even-numbered slices are acquired before odd-numbered ones.
+
+**Acquisition loop nesting (default).** The ParaVision 360 manual documents the default nesting of
+the acquisition loops, which fixes the order scans are written to `fid`/`rawdata.jobN` (Bruker
+default relations; individual methods may deviate):
+
+```
+NS > ACQ_phase_factor > NSLICES > NI > NA > ACQ_size[1] > ACQ_size[2] > NAE > NR
+```
+
+read as written in the manual, with `NR` (repetitions) the outermost loop. Here `NS` = number of
+averaged scans, `NA` = number of averaged phase-encode steps, and `NAE` = number of averaged
+experiments at the `NR` level (distinct averaging stages, all co-added into the stored signal).
 
 ### 5.3 Data Encoding
 
@@ -634,7 +718,7 @@ Where `integer(cycles)` represents additional loop cycles from method-specific p
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `ACQ_grad_matrix` | double[NI][3][3] | Gradient rotation matrix for each object. Transforms from the logical gradient frame (read, phase, slice) to the magnet/laboratory frame (x, y, z) |
+| `ACQ_grad_matrix` | double[NSLICES][3][3] | Gradient rotation matrix for each slice (the first dimension is `NSLICES`, not `NI`). Transforms from the logical gradient frame (read, phase, slice) to the magnet/laboratory frame (x, y, z) |
 | `ACQ_slice_offset` | double[] | Slice offsets in mm from magnet isocenter |
 | `ACQ_slice_thick` | double | Slice thickness in mm |
 | `ACQ_slice_sepn` | double[] | Separation between slices in mm |
@@ -725,8 +809,10 @@ The `reco` file controls how raw data is transformed into images. Most RECO para
 - **FT_MODE** (0) - Standard Fourier transform reconstruction (default)
 - **BP_WITH_FT_MODE** (1) - FT in first direction, then back projection
 - **BP_MODE** (2) - Pure back projection, no FT
-- **USER_MODE** (3) - User-defined filter-graph reconstruction network (PV6+); the pipeline is
-  described explicitly by the `RecoStage*` parameters (see [Section 10.2](#102-multi-channel-reconstruction)). Used for multi-channel, GRAPPA, and regridding reconstructions.
+- **USER_MODE** (3) - User-defined filter-graph reconstruction network, available since **PV5.1**
+  (member 3 of `RECO_TYPE` in the PV5.1 header; real PV5.1 data stores `RECO_mode=USER_MODE`). In
+  **PV6+** the pipeline is additionally described explicitly on disk by the `RecoStage*` parameters
+  (see [Section 10.2](#102-multi-channel-reconstruction)). Used for multi-channel, GRAPPA, and regridding reconstructions.
 
 For back projection, `RECO_bp_type` (enum `RECO_BP_TYPE`) selects `MERIDIANS` or `GREAT_CIRCLES`.
 
@@ -884,9 +970,12 @@ Two types of phase correction are supported:
 #### In-line Phase Correction (per-direction, part of FT processing)
 
 Applied as part of the FT processing in each direction, before the FT in subsequent directions.
-The ParaVision RECO class supports **only linear (first-order)** in-line phase correction
-(enum `RECO_PC_TYPE`); there is no fifth-order option (a fifth-order polynomial correction
-exists in XWIN-NMR/TopSpin processing but not in the ParaVision RECO pipeline).
+The in-line phase correction mode is selected per direction by `RECO_pc_mode` (enum
+`RECO_PC_TYPE`). The `recotyp.h` enum in the supported PV5.1/PV6.0.1 headers defines only `NO_PC`
+and `FIRST_ORDER_PC`, so **linear (first-order)** is the only in-line phase correction carried by
+the stored enum ordinals. The `D02`/`D13` PvParams manuals additionally document a `FIFTH_ORDER_PC`
+mode — with a companion `RECO_pc_pol` parameter of type `RECO_5ORD_COEFFS` (coefficients
+`pc0`…`pc5`) — that is **not** present in these header enums.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -1032,7 +1121,7 @@ The Visu parameter group contains the following subgroups:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `VisuVersion` | int | Visu parameter set version (1 for ParaVision 4/5; 3 for ParaVision 6; 8 for ParaVision 360 v3.x) |
+| `VisuVersion` | int | Visu parameter set version (1 for ParaVision 4/5; 3 for ParaVision 6; 7 or 8 for ParaVision 360 v3.x — e.g. 7 for 360.3.4, 8 for 360.3.6) |
 | `VisuUid` | string | Globally unique dataset identifier (used for DICOM) |
 | `VisuCreator` | string | Creator application(s), semicolon-separated |
 | `VisuCreatorVersion` | string | Creator version(s) |
@@ -1045,7 +1134,7 @@ These parameters fully describe the image geometry and data layout:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `VisuCoreDim` | int | Number of dimensions per frame (2 or 3) |
+| `VisuCoreDim` | int | Number of dimensions per frame (1, 2, or 3; 1 for single-voxel spectroscopy) |
 | `VisuCoreFrameCount` | int | Total number of frames in dataset |
 | `VisuCoreSize` | int[] | Frame dimensions in pixels (e.g., `256 256` for 2D) |
 | `VisuCoreDimDesc` | enum[] | Dimension types: `spatial`, `spectroscopic`, `temporal` |
@@ -1339,11 +1428,11 @@ The `subject` file at the study level contains subject/patient information in JC
 | `SUBJECT_study_name` | Name of the study |
 | `SUBJECT_date` | Date of study |
 | `SUBJECT_purpose` | Purpose / notes |
-| `SUBJECT_type` | Type: Biped, Quadruped, Phantom, Other, OtherAnimal |
-| `SUBJECT_sex` | Sex: MALE, FEMALE, UNDEFINED, UNKNOWN |
-| `SUBJECT_weight` | Weight in grams |
+| `SUBJECT_type` | Subject type (`SUBJECT_TYPE_TYPE`) — **version-dependent enum**: PV5.x = `Human`, `Animal`, `Phantom`, `Other`; PV6+/360 = `Biped`, `Quadruped`, `Phantom`, `Other`, `OtherAnimal` |
+| `SUBJECT_sex` | Subject sex — a length-8 **free-text string**, lowercase (`<male>`, `<female>`, `<unknown>`). The enum members live in separate parameters: `SUBJECT_sex_animal` (`SUBJECT_ANIMAL_SEX_TYPE`: `MALE`, `FEMALE`, `UNDEFINED`, `UNKNOWN`) and `SUBJECT_sex_human` (`SUBJECT_HUMAN_SEX_TYPE`: `Male`, `Female`) |
+| `SUBJECT_weight` | Weight in **kg** (the derived `VisuSubjectWeight` is documented in kg) |
 | `SUBJECT_position` | Position in magnet |
-| `SUBJECT_entry` | Entry direction (HeadFirst, FeetFirst) |
+| `SUBJECT_entry` | Entry direction (`SUBJECT_ENTRY`): `SUBJ_ENTRY_HeadFirst`, `SUBJ_ENTRY_FeetFirst` |
 | `SUBJECT_study_nr` | Study number |
 | `SUBJECT_remarks` | Free-text remarks |
 
@@ -1418,11 +1507,12 @@ architecture (activated by `RECO_mode = USER_MODE`):
 - `RecoNumInputChan` - Number of input channels. When > 1, reconstruction assumes the raw data
   file consists of `RecoNumInputChan` blocks of size `RECO_inp_size[0]` forming the first
   dimension of the data file.
-- `RecoOutputChan` - Number of output channels: either `RecoNumInputChan` or 1.
+- `RecoNumOutputChan` - Number of output channels: either `RecoNumInputChan` or 1. (The manual
+  prose calls this `RecoOutputChan`; the parameter declared on disk is `RecoNumOutputChan`.)
 - `RecoCombineMode` - Channel combination (enum `RECO_COMBINE_TYPE`): `SumOfSquares` (0),
   `ShuffleImages` (1), or `AddImages` (2). `ShuffleImages` appends the per-coil datasets as
   separate frame groups instead of combining them.
-- `RecoScaleChannel` - Per-channel weighting factors, applied just before images are combined.
+- `RecoScaleChan` - Per-channel weighting factors (array), applied just before images are combined.
 - `RecoPhaseChan` - Per-channel phase offsets.
 
 **Processing network (PV6 `USER_MODE`):** PV6 describes the reconstruction as an explicit
@@ -1495,9 +1585,10 @@ ParaVision parameters (written as `\<ParamName\>` in the node text).
 (the packed mapping functions into the output data range).
 
 **GRAPPA parameters (parallel imaging acceleration):**
-- `RecoGrappaProcMode` - Processing mode (enum `RECO_GRAPPA_PROC_MODE`): `GrappaProcStandard`
-  (determine and apply coefficients directly), `GrappaProcCalibrate` (calibrate and store), or
-  `GrappaProcApply` (restore stored coefficients and apply)
+- Processing mode — the enum `RECO_GRAPPA_PROC_MODE` (`GrappaProcStandard` = determine and apply
+  coefficients directly, `GrappaProcCalibrate` = calibrate and store, `GrappaProcApply` = restore
+  stored coefficients and apply) is a reconstruction C-API argument (`grappaMode`), **not** a stored
+  `RecoGrappa*` on-disk parameter
 - `RecoGrappaAccelFactor` - Acceleration factor
 - `RecoGrappaKernelRead` / `RecoGrappaKernelPhase` - Kernel size in k-space
 - `RecoGrappaNumRefRead` / `RecoGrappaNumRefPhase` - Reference line count
@@ -1509,7 +1600,7 @@ ParaVision parameters (written as `\<ParamName\>` in the node text).
 - `RecoRegridNTrajType` - Trajectory type affecting density correction (enum
   `RecoRegridNTrajTypes`): `RecoRegridNTrajAny`, `RecoRegridNTrajRadial` (rho density
   pre-correction, UTE), `RecoRegridNTrajSpiral` (Jacobian density pre-correction)
-- `RecoRegridNDCMode` - Density correction (enum `RecoRegridNDCTypes`): `RecoRegridNDCNone`,
+- `RecoRegridNDensCorr` - Density correction (enum `RecoRegridNDCTypes`): `RecoRegridNDCNone`,
   `RecoRegridNDCPost`, `RecoRegridNDCPre` (uses the provided `traj`), `RecoRegridNDCPrePost`
 - `RecoRegridNOver` - Oversampling factor (1.1 to 2.0)
 - `RecoRegridNKernelWidth` - Kaiser-Bessel kernel width (2 to 10)
@@ -1588,7 +1679,7 @@ GO parameters (subclass of ACQP) control the acquisition and reconstruction pipe
 
 ### Mapping Between Frames
 
-**Gradient to magnet:** `ACQ_grad_matrix[i]` (3x3 rotation matrix per object)
+**Gradient to magnet:** `ACQ_grad_matrix[i]` (3x3 rotation matrix per slice, `i = 0..NSLICES-1`)
 
 **Patient to image:** `VisuCoreOrientation` (3x3 matrix, `i = M * p`)
 
@@ -1631,7 +1722,7 @@ frame yields the ParaVision-frame equivalent, and vice versa (the matrix is its 
 | Study directory path | `<DiskUnit>/data/<user>/nmr/<name>/...` (name max 15 chars) | `<DataPath>/<name>/...` (name max 64 chars) |
 | Study-level files | `subject`, `AdjStatePerStudy`, `AdjResult/` | adds `ResultState`, `ScanProgram.scanProgram` |
 | Raw data storage | `fid` (renamed `ser` on TopSpin export) | `fid` plus optional job-based `rawdata.job[N]` |
-| PROCNO files | `2dseq`, `reco`, `visu_pars`, `d3proc`, `meta`, `procs`, `id`, `roi`, `isa`, `fun/` | drops `d3proc` and `meta`; may add `methreco` (some reconstructions) |
+| PROCNO files | `2dseq`, `reco`, `visu_pars`, `d3proc`, `meta`, `procs`, `id`, `roi`, `isa`, `fun/` | drops `meta`; primary reconstructions replace `d3proc` with `methreco`, but `d3proc` is still written for some legacy/derived (e.g. ISA) reconstructions |
 | JCAMP-DX version | 4.24 | 4.24 |
 | Visu parameter version (`VisuVersion`) | 1 | 3 |
 | VisuSeriesNumber | Primary | Deprecated (use VisuExperimentNumber + VisuProcessingNumber) |
@@ -1653,15 +1744,16 @@ frame yields the ParaVision-frame equivalent, and vice versa (the matrix is its 
 
 ParaVision 360 is a separate version line (e.g. v3.6, `ACQ_sw_version = <PV-360.3.6>`). It
 shares the JCAMP-DX 4.24 format and the study/experiment/reconstruction hierarchy
-(`<DataPath>/data/<user>/<study>/<expno>/pdata/<procno>`), but differs in several important
-ways (cross-referenced against the Bruker-supplied standard dataset
+(`<DataPath>/<name>/<expno>/pdata/<procno>`, the same PV6-style path — `<name>` created by
+ParaVision, max 64 chars, default `<DataPath>` = `<PvInstDir>/<USER>`), but differs in several
+important ways (cross-referenced against the Bruker-supplied standard dataset
 [cecilyen/PV360_StdData](https://github.com/cecilyen/PV360_StdData)):
 
 | Feature | ParaVision 360 v3.x |
 |---------|---------------------|
 | Raw data | `rawdata.jobN` only (no `fid`); the GO subclass parameters are **absent** |
 | Raw scan size | Given by `ACQ_jobs[0][0]`; word type by `ACQ_word_size`/`BYTORDA` |
-| VisuVersion | `8` |
+| VisuVersion | `7` or `8` (e.g. 7 for 360.3.4, 8 for 360.3.6) |
 | `ACQ_experiment_mode` | Enum `ACQ_EXPERIMENT_MODE`: `SingleExperiment`, `MultipleReceiverExperiment`, `ParallelExperiment`, `MpiExperiment` (multi-experiment support) |
 | Pulse program | Precompiled `pulseprogram.precomp` at the scan root; the source program is a separate `lists/pp/<seq>.ppg` (e.g. `lists/pp/FLASH.ppg`) |
 | Extra parameter files | `acqp.out`, `reco.out` (output snapshots), `shimcondition`, `methreco` (in PROCNO), `configscan` |
@@ -1670,11 +1762,17 @@ ways (cross-referenced against the Bruker-supplied standard dataset
 | Diffusion (DTI) | Job-based only (`rawdata.job0`); b-values/vectors in `method` |
 | Non-Cartesian | UTE3D ships a `traj` trajectory file **and** a `b0` off-resonance reference file |
 
-> **Job-based raw data (`ACQ_jobs`).** Because PV360 has no `GO_*` subclass, the raw layout is
-> read entirely from `ACQ_jobs`. `ACQ_jobs_size` gives the number of `rawdata.jobN` files, and
-> each `ACQ_jobs[j]` struct describes job *j*; its first element is the per-scan size in words
-> (e.g. `(400, 9, 18, 7776, 101, 74626.9, 2592, 1, <job0>)` → 400 words/scan). `ACQ_size[0]`
-> need not equal the job scan size. The raw word type comes from `ACQ_word_size` + `BYTORDA`.
+> **Job-based raw data (`ACQ_jobs` / `ACQ_ScanPipeJobSettings`).** Because PV360 has no `GO_*`
+> subclass, the raw layout is read entirely from `ACQ_jobs`. `ACQ_jobs_size` gives the number of
+> `rawdata.jobN` files, and each `ACQ_jobs[j]` struct describes job *j* (fields per
+> [Section 3.3](#33-rawdatajobn---job-based-raw-data-pv6)): the **first** element is the per-scan
+> size in real points and the **3rd-from-last** is `nStoredScans`, e.g.
+> `(400, 9, 18, 7776, 101, 74626.9, 2592, 1, <job0>)` → `scanSize=400`, `nStoredScans=2592`,
+> `chanNum=1`, `title=job0`. `ACQ_size[0]` need not equal the job scan size. The raw word type
+> comes from `ACQ_word_size` + `BYTORDA`; the companion `ACQ_ScanPipeJobSettings[j]` records the
+> storage policy — `storageDataType` (`STORE_32bit_signed` default, or `STORE_64bit_float`),
+> `storeDataMode` (`STORE_processed` default, or `STORE_raw` = stored before averaging), and
+> `normalizeMode` (`NORMALIZE_none` / `NORMALIZE_divide_by_4rg`).
 
 ---
 
@@ -1747,10 +1845,30 @@ A 3D magnitude reconstruction to `RECO_size = (256,128,64)`, 16-bit, is a **sing
 
 When raw data is job-based, each `rawdata.jobN` file is sized from its `ACQ_jobs[N]` descriptor
 rather than the `GO_*` block model (which may be absent, as in PV360 — see
-[Section 13.1](#131-paravision-360-v3x)). The first element of `ACQ_jobs[N]` is the per-scan
-size in words; the file size is `(wordsize/8) * scan_size_words * (number of scans in the job)`,
-with the word type given by `ACQ_word_size` + `BYTORDA`. `ACQ_jobs_size` gives how many job
-files exist. The `ACQ_size[0]` value need not equal the job scan size.
+[Section 13.1](#131-paravision-360-v3x)). Per the ParaVision 360 File Formats manual, the size is
+
+```
+rawdata.jobN size = (wordsize/8) * ACQ_jobs[N].scanSize * Nreceivers * ACQ_jobs[N].nStoredScans
+```
+
+where `scanSize` is the first `ACQ_jobs[N]` element (real-valued points per scan, and **need not
+equal `ACQ_size[0]`**), `nStoredScans` is the number of scans written, and `Nreceivers` is the
+number of active receivers for the job (count of `Yes` in `ACQ_ReceiverSelect`). Note the
+**`Nreceivers` factor**: for multi-channel PV360 acquisitions the file is that many times larger
+than a single-channel count would suggest. The word type is given by `ACQ_word_size` + `BYTORDA`
+(equivalently `ACQ_ScanPipeJobSettings[N].storageDataType`), and `ACQ_jobs_size` gives how many
+job files exist.
+
+Worked example — real PV360 4-channel T1-FLASH
+(`ACQ_jobs = (400, …, 2592, 1, <job0>)` → `scanSize=400`, `nStoredScans=2592`; `ACQ_ReceiverSelect`
+has 4 `Yes`; 32-bit):
+
+```
+rawdata.job0 size = 4 * 400 * 4 * 2592 = 16,588,800 bytes   (matches the on-disk file exactly)
+```
+
+The Bruker manual's own example — 4-channel 128×128 FLASH, `scanSize=256`, `nStoredScans=128` —
+gives `4 * 256 * 4 * 128 = 524,288` bytes.
 
 ### 14.5 Trajectory (`traj`) size
 
@@ -1781,8 +1899,7 @@ rule:
 | `EPI`, `dEPI` | Echo-planar train; `ACQ_scan_size = ACQ_phase_factor_scans` | navigators (`fid.navFid` / `rawdata.Navigator`) |
 | `SPECTROSCOPY`, `CSI`, `FIELD_MAP` | Non-image; `ACQ_dim_desc`/`VisuCoreDimDesc` contain `Spectroscopic` | `trace.*` (spectroscopy) |
 
-These scheme names are a reader/library convention (e.g.
-[isi-nmr/brukerapi-python](https://github.com/isi-nmr/brukerapi-python)), not stored parameters;
+These scheme names are a classification convention, not stored parameters;
 the underlying determinants are `PULPROG` together with `ACQ_dim`, `ACQ_dim_desc`, and the
 phase-encoding parameters. Spectroscopic and field-map schemes are not conventional images and
 should be detected (via a `Spectroscopic` dimension) and handled separately from the image
