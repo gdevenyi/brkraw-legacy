@@ -60,7 +60,37 @@ class ScanInfoAnalyzer(BaseAnalyzer):
             visu_pars = pvobj.get_visu_pars(reco_id)
         except (FileNotFoundError, AttributeError):
             visu_pars = OrderedDict()
+        self._inherit_acq_params(pvobj, reco_id, visu_pars)
         setattr(self, 'visu_pars', visu_pars)
+
+    @staticmethod
+    def _inherit_acq_params(pvobj, reco_id, visu_pars):
+        """Complete a derived reconstruction's parameters with acquisition-level
+        Visu parameters it omits.
+
+        A scan has one acquisition but several reconstructions. Acquisition
+        parameters (``VisuAcq*``) describe that shared acquisition, not a
+        reconstruction's geometry, so an extra reco can leave them out (e.g.
+        ``VisuAcqGradEncoding`` / ``VisuAcqImagePhaseEncDir`` on a computed
+        T2/ADC map). Source only those from the primary (first) reconstruction,
+        where they always live; reconstruction-specific parameters (``VisuCore*``,
+        ``VisuFG*``, ...) are left to the reco itself so its own geometry is used.
+        """
+        try:
+            recos = pvobj.avail
+        except AttributeError:
+            return
+        if not recos or reco_id in (None, recos[0]):
+            return
+        try:
+            primary = pvobj.get_visu_pars(recos[0])
+        except (FileNotFoundError, AttributeError):
+            return
+        target = visu_pars.parameters if hasattr(visu_pars, 'parameters') else visu_pars
+        have = set(visu_pars.keys())
+        for key in primary.keys():
+            if key.startswith('VisuAcq') and key not in have:
+                target[key] = primary[key]
            
     def _parse_info(self):
         """Parse and process detailed information from the visualization parameters and other sources.
