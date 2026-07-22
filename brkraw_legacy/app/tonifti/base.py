@@ -105,23 +105,38 @@ class BaseMethods(BaseBufferHandler):
         datarray_analyzer = scanobj.get_datarray_analyzer(reco_id)
         axis_labels = datarray_analyzer.shape_desc
         dataarray = datarray_analyzer.get_dataarray()
-        if 'slice' in axis_labels:
-            slice_axis = axis_labels.index('slice')
-            if slice_axis != 2:
-                dataarray = np.swapaxes(dataarray, slice_axis, 2)
-                axis_labels[slice_axis], axis_labels[2] = axis_labels[2], axis_labels[slice_axis]
-        elif len(axis_labels) > 2 and axis_labels[2] != 'spatial':
-            # A 2D acquisition with frame groups but no FG_SLICE has a single
-            # implicit slice; insert it at the slice axis so frame groups
-            # (echo/movie/IR/...) are not mistaken for slices.
-            dataarray = np.expand_dims(dataarray, 2)
-            axis_labels.insert(2, 'slice')
+        dataarray = BaseMethods._normalize_slice_axis(dataarray, axis_labels)
         return {
             'data_array': dataarray,
             'data_slope': datarray_analyzer.slope,
             'data_offset': datarray_analyzer.offset,
             'axis_labels': axis_labels
         }
+
+    @staticmethod
+    def _normalize_slice_axis(dataarray: NDArray, axis_labels: list):
+        """Place the slice axis at position k (2) -- the axis the affine's third
+        column addresses -- inserting a size-1 slice axis when the acquisition
+        stores none.
+
+        A 2D acquisition has no FG_SLICE frame group when it is a single slice,
+        so Bruker leaves the slice axis out of the 2dseq entirely. The affine is
+        always 3D, so the data must carry an explicit slice axis: a single slice
+        becomes a conventional 3D volume (X, Y, 1) rather than a 2D image (NIfTI
+        reserves dims 1-3 for x/y/z), and a 2D acquisition whose extra axes are
+        frame groups (echo/movie/IR/...) gets the implicit slice inserted so
+        those frames are not mistaken for slices. Mutates ``axis_labels`` in
+        place and returns the (possibly reshaped) array.
+        """
+        if 'slice' in axis_labels:
+            slice_axis = axis_labels.index('slice')
+            if slice_axis != 2:
+                dataarray = np.swapaxes(dataarray, slice_axis, 2)
+                axis_labels[slice_axis], axis_labels[2] = axis_labels[2], axis_labels[slice_axis]
+        elif axis_labels[:2] == ['spatial', 'spatial'] and axis_labels[2:3] != ['spatial']:
+            dataarray = np.expand_dims(dataarray, 2)
+            axis_labels.insert(2, 'slice')
+        return dataarray
     
     @staticmethod
     def get_affine_dict(scanobj: 'Scan', reco_id: Optional[int] = None,
