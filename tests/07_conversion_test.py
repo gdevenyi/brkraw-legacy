@@ -5,6 +5,7 @@ previously crashed or produced wrong output, using the public BrukerAPI test
 datasets (Zenodo) and the PV360 standard-data repo; each skips when its dataset
 or a real (non-LFS-stub) ``2dseq`` is unavailable.
 """
+import gc
 import warnings
 from pathlib import Path
 
@@ -125,3 +126,37 @@ def test_standalone_scan_directory_loads(pv360_root):
     nii = d.get_niftiobj(1, 1)
     nii = nii[0] if isinstance(nii, list) else nii
     assert nii.ndim == 3 and all(s > 0 for s in nii.shape)
+
+
+# --------------------------------------------------------------------------- #
+# Conversion must not leak the 2dseq/fid file handles (reader-owns-handle)
+# --------------------------------------------------------------------------- #
+
+def test_conversion_releases_file_handles(lego_study):
+    """A raw->NIfTI conversion closes the 2dseq/fid handles it opens instead of
+    leaving them for the garbage collector -- which emits ResourceWarnings and,
+    off CPython, leaks descriptors. Recording warnings while converting a few
+    scans catches a regression of the reader-owns-handle behaviour.
+    """
+    loader = BrukerLoader(str(lego_study))
+    converted = 0
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter('always')
+        for sid in loader.pvobj.avail_scan_id:
+            for rid in loader.pvobj.avail_reco_id.get(sid, [1]):
+                try:
+                    nii = loader.get_niftiobj(sid, rid)
+                except Exception:
+                    continue
+                del nii
+                converted += 1
+                break                       # one reconstruction per scan is enough
+            if converted >= 3:
+                break
+        gc.collect()                        # run finalizers inside the recording block
+    if not converted:
+        pytest.skip('no convertible scan in sample')
+    unclosed = [str(w.message) for w in caught
+                if issubclass(w.category, ResourceWarning)
+                and 'unclosed file' in str(w.message)]
+    assert not unclosed, 'leaked file handles during conversion: {}'.format(unclosed)

@@ -62,7 +62,13 @@ class DataArrayAnalyzer(BaseAnalyzer):
     
     def get_dataarray(self):
         """Read and return the structured data array from the buffer, applying data type and shape transformations.
+
+        The reader owns the buffer: it is read once and closed here rather than
+        left open for the garbage collector. The returned array keeps the read
+        bytes, not the file handle, so it stays valid after the close.
         """
-        self.buffer.seek(0)
-        return np.frombuffer(self.buffer.read(), self.dtype).reshape(self.shape, order='F')
+        with self.buffer as buffer:
+            buffer.seek(0)
+            raw = buffer.read()
+        return np.frombuffer(raw, self.dtype).reshape(self.shape, order='F')
 

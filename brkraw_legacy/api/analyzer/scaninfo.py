@@ -53,12 +53,9 @@ class ScanInfoAnalyzer(BaseAnalyzer):
             except AttributeError:
                 vals = OrderedDict()
             setattr(self, p, vals)
-        try:
-            fid_buffer = pvobj.get_fid()
-        except (FileNotFoundError, AttributeError):
-            fid_buffer = None
-        setattr(self, 'fid_buffer', fid_buffer)
-
+        # The fid (raw k-space) is not read for scan info -- FID.get_info derives
+        # the fid dtype from acqp -- so it is not opened here; opening it only
+        # leaked the handle.
         try:
             visu_pars = pvobj.get_visu_pars(reco_id)
         except (FileNotFoundError, AttributeError):
