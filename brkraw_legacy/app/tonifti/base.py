@@ -223,11 +223,33 @@ class BaseMethods(BaseBufferHandler):
             return name
             
     @staticmethod
+    def _warn_if_complex(axis_labels):
+        """Warn that COMPLEX_IMAGE data is not split into BIDS part- entities.
+
+        A COMPLEX_IMAGE reconstruction stores all real frames then all imaginary
+        frames in one 2dseq (FILE_FORMAT.md 3.4), which becomes a single
+        multi-volume NIfTI here. Auto-splitting into part-real/part-imag is not
+        done -- the real/imag volume order cannot be validated against the
+        available sample data, and a wrong split is worse than the (non
+        data-losing) stacked volume. The BIDS-correct route is separate
+        real/imaginary/phase/magnitude reconstructions with the 'part' datasheet
+        column.
+        """
+        if axis_labels and 'complex' in axis_labels:
+            warnings.warn(
+                "Complex (real+imaginary) reconstruction written as one "
+                "multi-volume image (real volume(s) first, then imaginary). BIDS "
+                "'part-real'/'part-imag' splitting is not automated; use separate "
+                "real/imaginary/phase/magnitude reconstructions and set the 'part' "
+                "column in the datasheet for part-labelled outputs.", UserWarning)
+
+    @staticmethod
     def _assemble_nifti1image(scanobj: 'Scan',
                               dataobj: NDArray,
                               affine: NDArray,
                               scale_mode: Optional[Literal['header', 'apply']] = None,
                               axis_labels: Optional[list] = None):
+        BaseMethods._warn_if_complex(axis_labels)
         echo_axis = axis_labels.index('echo') if (axis_labels and 'echo' in axis_labels) else None
         if not isinstance(dataobj, list) and echo_axis is not None and dataobj.shape[echo_axis] > 1:
             # BIDS emits one file per echo, so split the echo axis into separate
