@@ -574,8 +574,10 @@ class BrukerLoader():
             metadata = COMMON_META_REF.copy()
         for k, v in metadata.items():
             val = meta_get_value(v, acqp, method, visu_pars)
-            if k in ['PhaseEncodingDirection', 'SliceEncodingDirection']:
+            if k == 'PhaseEncodingDirection':
                 # Convert the encoding direction meta data into BIDS format
+                # (SliceEncodingDirection is resolved directly to 'k'/None by its
+                # mapping and needs no code-to-axis conversion.)
                 if val is not None:
                     if isinstance(val, int):
                         val = encdir_dic[val]
@@ -615,8 +617,21 @@ class BrukerLoader():
         return json_obj
 
     def save_json(self, scan_id, reco_id, filename, dir='./', metadata=None, condition=None,
-                  task_name=None, intended_for=None):
+                  task_name=None, intended_for=None, num_slices=None):
         json_obj = self._parse_json(scan_id, reco_id, metadata)
+
+        # SliceTiming must have exactly one entry per reconstructed slice. The
+        # mapping derives its length from Bruker NSLICES, which can disagree with
+        # the written volume (cropping, slice-pack stacking, single-slice edge
+        # cases); when the caller knows the true slice count, drop a mismatched
+        # array rather than ship a wrong-length (and thus misleading) SliceTiming.
+        if json_obj.get('SliceTiming') is not None and num_slices is not None:
+            st = json_obj['SliceTiming']
+            st = st if isinstance(st, list) else [st]
+            if len(st) == num_slices:
+                json_obj['SliceTiming'] = st
+            else:
+                del json_obj['SliceTiming']
         if condition is not None:
             code, idx = condition
             if code == 'me':    # multi-echo

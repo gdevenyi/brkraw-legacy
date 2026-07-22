@@ -54,16 +54,18 @@ COMMON_METADATA_FIELD = \
                            'ManufacturersModelName',
                            'DeviceSerialNumber',
                            'StationName',
-                           'SoftwareVersion',
+                           'SoftwareVersions',
                            'MagneticFieldStrength',
                            'ReceiveCoilName',
                            'ReceiveCoilActiveElements',
+                           'NumberReceiveCoilActiveElements',
                            'GradientSetType',
                            'MRTransmitCoilSequence',
                            'MatrixCoilMode',
                            'CoilCombinationMethod',
 
                              # SEQUENCE_SPECIFIC
+                           'MRAcquisitionType',
                            'PulseSequenceType',
                            'ScanningSequence',
                            'SequenceVariant',
@@ -91,7 +93,7 @@ COMMON_METADATA_FIELD = \
 
                              # RF_AND_CONTRAST, SLICE_ACCELERATION
                            'FlipAngle',
-                           'MultibandAccerlationFactor',
+                           'MultibandAccelerationFactor',
                            'AnatomicalLandmarkCoordinates',
 
                              # INSTITUTION_INFORMATION
@@ -123,23 +125,37 @@ COMMON_META_REF = \
          DeviceSerialNumber             = dict(SN       = 'VisuSystemOrderNumber',
                                                Equation = 'str(SN)'),  # BIDS type: string
          StationName                    = 'VisuStation',
-         SoftwareVersion                = 'VisuAcqSoftwareVersion',
+         # BIDS RECOMMENDED scanner field is plural 'SoftwareVersions' (DICOM
+         # 0018,1020); the singular 'SoftwareVersion' is the stimulus-presentation
+         # field. ACQ_sw_version is the PV5.1 fallback.
+         SoftwareVersions               = ['VisuAcqSoftwareVersion', 'ACQ_sw_version'],
          MagneticFieldStrength          = dict(Freq     = 'VisuAcqImagingFrequency',
                                                Equation = 'Freq / 42.576'),
          ReceiveCoilName                = 'VisuCoilReceiveName',
-         ReceiveCoilActiveElements      = 'VisuCoilReceiveType',
-         GradientSetType                = 'ACQ_status',
-         MRTransmitCoilSequence         = dict(Name         = 'VisuCoilTransmitName',
-                                               Manufacture  = 'VisuCoilTransmitManufacturer',
-                                               Type         = 'VisuCoilTransmitType'),
+         # VisuCoilReceiveType is the coil geometry KIND (VOLUME_COIL/SURFACE_COIL/
+         # ...), not the set of active receive elements the BIDS field asks for.
+         ReceiveCoilActiveElements      = None,
+         NumberReceiveCoilActiveElements = 'PVM_EncNReceivers',  # BIDS type: integer
+         # ACQ_status is an acquisition-status code (e.g. 'S116'), unrelated to the
+         # gradient coil/set; no Bruker parameter encodes a gradient set type.
+         GradientSetType                = None,
+         # BIDS type: string (DICOM 0018,9049). Emit the transmit coil name only; a
+         # nested object is a schema type error.
+         MRTransmitCoilSequence         = 'VisuCoilTransmitName',
          CoilConfigName                 = 'ACQ_coil_config_file',  # if Transmit and Receive coil info in None
-         MatrixCoilMode                 = 'ACQ_experiment_mode',
+         # ACQ_experiment_mode is single-vs-parallel/multiple-receiver EXPERIMENT
+         # mode, not the analog array-coil combination mode BIDS means.
+         MatrixCoilMode                 = None,
          CoilCombinationMethod          = None,
 
          # SEQUENCE_SPECIFIC
          PulseSequenceType              = 'PULPROG',  # 'VisuAcqEchoSequenceType'
          ScanningSequence               = 'VisuAcqSequenceName',
          SequenceVariant                = 'VisuAcqEchoSequenceType',
+         # BIDS: '2D' or '3D'. PVM_SpatDimEnum is '2D'/'3D' on PV6+; fall back to
+         # VisuCoreDim (2/3) -> '2D'/'3D' for PV5.1.
+         MRAcquisitionType              = ['PVM_SpatDimEnum',
+                                           dict(Dim='VisuCoreDim', Equation="str(int(Dim)) + 'D'")],
          # BIDS ScanOptions is an array of DICOM scan-option codes; the Bruker
          # flags below do not map cleanly to that type, so it is left unset.
          ScanOptions                    = None,
@@ -151,13 +167,25 @@ COMMON_META_REF = \
          NonlinearGradientCorrection    = None,
 
          # IN_PLANE_SPATIAL_ENCODING
-         NumberShots                    = 'VisuAcqKSpaceTrajectoryCnt',
-         ParallelReductionFactorInPlane = 'ACQ_phase_factor',
+         # True shot count of a (segmented) EPI; VisuAcqKSpaceTrajectoryCnt was the
+         # trajectory count and returned 1 for every scan.
+         NumberShots                    = ['NSegments', 'PVM_EpiNShots'],
+         # PPI (parallel-imaging) acceleration; ACQ_phase_factor was the RARE/EPI
+         # echo-train (segmentation) factor -- not the acceleration.
+         ParallelReductionFactorInPlane = ['PVM_EncPpiAccel1',
+                                           dict(key='PVM_EncPpi', idx=1)],
          ParallelAcquisitionTechnique   = None,
-         # BIDS PartialFourier is a single number (fraction); Bruker reports a
-         # per-axis array, which is not directly convertible, so it is left unset.
-         PartialFourier                 = None,
-         PartialFourierDirection        = None,
+         # Phase-axis partial-Fourier fraction = 1/accel: Bruker PVM_EncPft[1] /
+         # PVM_EncPftAccel1 is an acceleration factor (>= 1), emitted only when the
+         # phase axis is actually under-sampled (accel > 1).
+         PartialFourier                 = [dict(PFT='PVM_EncPftAccel1',
+                                                Equation='1.0/PFT if PFT>1 else None'),
+                                           dict(PFT=dict(key='PVM_EncPft', idx=1),
+                                                Equation='1.0/PFT if PFT>1 else None')],
+         PartialFourierDirection        = [dict(PFT='PVM_EncPftAccel1',
+                                                Equation='"phase" if PFT>1 else None'),
+                                           dict(PFT=dict(key='PVM_EncPft', idx=1),
+                                                Equation='"phase" if PFT>1 else None')],
          # Resolves only the phase-encode AXIS (i/j/k), not the polarity sign
          # (i-/j-/k-). The sign depends on the PE gradient polarity, k-space
          # traversal, and reconstruction flips relative to the written voxel
@@ -168,53 +196,66 @@ COMMON_META_REF = \
          PhaseEncodingDirection         = [dict(key         = 'VisuAcqGradEncoding',
                                                 where       = 'phase_enc'),
                                            'VisuAcqImagePhaseEncDir'],  # Deprecated
-         EffectiveEchoSpacing           = dict(BWhzPixel    = 'VisuAcqPixelBandwidth',
-                                               MatSizePE    = dict(key='PVM_EncMatrix',
-                                                                   idx=[dict(key    = 'VisuAcqGradEncoding',
-                                                                             where  = 'phase_enc'),
-                                                                        1]),  # PV5.1
-                                               # Parallel-imaging (PPI) acceleration, default 1 (none).
-                                               # Was ACQ_phase_factor, which is the RARE/EPI echo-train
-                                               # factor -- not the acceleration -- and wrongly divided EES.
-                                               ACCfactor    = ['PVM_EncPpiAccel1', 1],
-                                               Equation     = '(1 / (MatSizePE * BWhzPixel)) / ACCfactor'),  # in second
-         # FSL convention (~ readout dwell time / acceleration). ACCfactor is the
-         # PPI acceleration (default 1), not ACQ_phase_factor; the unused ETL was
-         # dropped. NOTE: the readout-vs-phase bandwidth basis of 1/BWhzPixel
-         # should be validated against a sequence with known echo spacing.
-         TotalReadoutTime               = dict(BWhzPixel    = 'VisuAcqPixelBandwidth',
-                                               ACCfactor    = ['PVM_EncPpiAccel1', 1],
-                                               Equation     = '(1 / BWhzPixel) / ACCfactor'),
+         # EPI echo spacing (seconds), reduced by the in-plane parallel factor.
+         # PVM_EpiEchoSpacing (ms) is Bruker's console echo spacing; it is absent
+         # for non-EPI sequences, so this field is emitted only where it applies
+         # (the old 1/(EncMatrix*PixelBandwidth) basis returned the ADC sample dwell,
+         # ~readout-matrix times too small, on every sequence).
+         EffectiveEchoSpacing           = dict(ES='PVM_EpiEchoSpacing',
+                                               ACC=['PVM_EncPpiAccel1',
+                                                    dict(key='PVM_EncPpi', idx=1), 1],
+                                               Equation='(ES/1000.0)/ACC'),
+         # FSL/BIDS TotalReadoutTime = EffectiveEchoSpacing * (ReconMatrixPE - 1),
+         # ReconMatrixPE = PVM_Matrix on the phase axis. EPI only (PVM_EpiEchoSpacing).
+         TotalReadoutTime               = dict(ES='PVM_EpiEchoSpacing',
+                                               ACC=['PVM_EncPpiAccel1',
+                                                    dict(key='PVM_EncPpi', idx=1), 1],
+                                               NPE=dict(key='PVM_Matrix',
+                                                        idx=[dict(key='VisuAcqGradEncoding',
+                                                                  where='phase_enc'), 1]),
+                                               Equation='((ES/1000.0)/ACC)*(NPE-1)'),
 
          # TIMING_PARAMETERS
          EchoTime                       = dict(TE           = 'VisuAcqEchoTime',
                                                Equation     = 'np.array(TE)/1000'),
-         InversionTime                  = 'VisuAcqInversionTime',
+         # BIDS wants a single number in SECONDS. Bruker VisuAcqInversionTime is in
+         # ms, and is an array for multi-TI (e.g. Look-Locker) sequences -> convert
+         # the scalar case to seconds; leave multi-TI unset (not a single number).
+         InversionTime                  = dict(TI='VisuAcqInversionTime',
+                                               Equation='TI/1000 if np.ndim(TI) == 0 else None'),
          # RepetitionTime is REQUIRED for func and valid for anat/dwi, so emit it
          # for every scan. It used to live only in FMRI_META_REF, so the one-shot
          # conversion path (save_json with metadata=None) produced func sidecars
          # missing this required field.
          RepetitionTime                 = dict(TR           = 'VisuAcqRepetitionTime',
                                                Equation     = 'TR/1000'),
-         # Slices per volume is len(ACQ_obj_order) (= NI), NOT VisuCoreFrameCount
-         # (= NI*NR). Using the frame count spread the slice times across every
-         # volume, collapsing them into ~1/NR of TR for any multi-volume (e.g.
-         # fMRI) scan -- exactly where SliceTiming matters most.
-         # NOTE: the [Order] indexing (slice-order direction for interleaved
-         # acquisition) is unchanged here and should be validated separately.
-         SliceTiming                    = dict(TR           = 'VisuAcqRepetitionTime',
-                                               Order        = 'ACQ_obj_order',
-                                               Equation     = 'np.linspace(0, TR/1000, np.size(Order) + 1)[Order]'),
-         SliceEncodingDirection         = [dict(key         = 'VisuAcqGradEncoding',
-                                                where       = 'slice_enc'),
-                                           dict(EncSeq      = 'VisuAcqGradEncoding',
-                                                Equation    = 'len(EncSeq)')],
-         DwellTime                      = dict(BWhzPixel    ='VisuAcqPixelBandwidth',
-                                               Equation     ='1/BWhzPixel'),
+         # One acquisition time per reconstructed slice (seconds). ACQ_obj_order is
+         # the slice acquisition order; argsort inverts it to each slice's time.
+         # Emit only when the order length equals the multi-slice count (NSLICES);
+         # multi-echo/multi-TI orders have length NSLICES*N and are skipped.
+         # save_json additionally drops it if the length ever disagrees with the
+         # written NIfTI's slice dimension.
+         SliceTiming                    = dict(TR='VisuAcqRepetitionTime',
+                                               Order='ACQ_obj_order',
+                                               NS='NSLICES',
+                                               Equation='(np.argsort(np.asarray(Order)) * (TR/1000.0/NS)).tolist() '
+                                                        'if (NS is not None and NS > 1 and np.size(Order) == NS) else None'),
+         # brkraw always reconstructs slices along the 3rd (k) axis; emit 'k' for
+         # multi-slice data, else unset. (BIDS requires a string i/j/k, not the
+         # integer the old where/len mapping produced.)
+         SliceEncodingDirection         = dict(NS='NSLICES',
+                                               Equation="'k' if (NS and NS > 1) else None"),
+         # Receiver dwell time per readout point (seconds) = 1/bandwidth. PVM_EffSWh
+         # (== SW_h) is the full sampling bandwidth in Hz; 1/VisuAcqPixelBandwidth
+         # was the whole-line duration (too large by the readout matrix size).
+         DwellTime                      = dict(SWh=['PVM_EffSWh', 'SW_h'],
+                                               Equation='1/SWh'),
 
          # RF_AND_CONTRAST, SLICE_ACCELERATION
-         FlipAngle                      = 'VisuAcqFlipAngle',
-         MultibandAccerlationFactor     = None,
+         # BIDS requires FlipAngle > 0; drop non-positive values.
+         FlipAngle                      = dict(FA='VisuAcqFlipAngle',
+                                               Equation='FA if np.all(np.asarray(FA) > 0) else None'),
+         MultibandAccelerationFactor    = None,  # no Bruker SMS/multiband parameter on PV5/6/7
          AnatomicalLandmarkCoordinates  = None,
 
          # INSTITUTION_INFORMATION

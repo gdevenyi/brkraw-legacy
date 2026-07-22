@@ -451,8 +451,10 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
             nii.to_filename('{}.nii.gz'.format(output_path))
             if json_path:
                 ref = get_bids_ref_obj(json_path, row)
+                nslices = nii.shape[2] if nii.ndim >= 3 else 1
                 dset.save_json(row.ScanID, row.RecoID, currentFileName, dir=row.Dir,
-                               metadata=ref, condition=['me', echo], task_name=task_name)
+                               metadata=ref, condition=['me', echo], task_name=task_name,
+                               num_slices=nslices)
     else:
         fname = '{}_{}'.format(fname, row.modality)
         dset.save_as(row.ScanID, row.RecoID, fname, dir=row.Dir, crop=crop, slope=slope, offset=offset)
@@ -468,9 +470,18 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
             if re.search('magnitude', row.modality, re.IGNORECASE):
                 pass  # magnitude data does not require JSON (BIDS)
             else:
+                # Slice count from the just-written NIfTI (authoritative for the
+                # SliceTiming length check inside save_json).
+                import nibabel as nib
+                num_slices = None
+                nii_path = os.path.join(row.Dir, '{}.nii.gz'.format(fname))
+                if os.path.exists(nii_path):
+                    shape = nib.load(nii_path).shape
+                    num_slices = shape[2] if len(shape) >= 3 else 1
                 dset.save_json(row.ScanID, row.RecoID, fname, dir=row.Dir,
                                metadata=ref, condition=condition,
-                               task_name=task_name, intended_for=intended_for)
+                               task_name=task_name, intended_for=intended_for,
+                               num_slices=num_slices)
 
 
 def encdir_code_converter(enc_param):

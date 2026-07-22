@@ -305,7 +305,24 @@ def main():
 
                                     datatype = assignDataType(method)
 
+                                    # A BOLD time-series needs >1 volume; a single-
+                                    # repetition EPI is not bold (BIDS BOLD_NOT_4D).
+                                    # Leave it unclassified so the user can decide.
+                                    if datatype == 'func' and numRepetitions(dset, scan_id) <= 1:
+                                        datatype = 'etc'
+                                        warnings.warn('ScanID:[{}] is a single-volume EPI '
+                                                      '(PVM_NRepetitions<=1), not a BOLD time-series. '
+                                                      'Marked as "etc"; set DataType/modality in the '
+                                                      'datasheet to convert it.'.format(scan_id))
+
                                     item = dict(zip(Headers, [rawdata, subj_id, sess_id, scan_id, reco_id, datatype]))
+
+                                    # BIDS requires a task- entity and TaskName for func;
+                                    # prefill from the Bruker protocol name (user-editable)
+                                    # so func output validates by default.
+                                    if datatype == 'func':
+                                        item['task'] = bidsTaskLabel(visu_pars)
+
                                     if datatype == 'fmap':
                                         for m, s, e in [['fieldmap', 0, 1], ['magnitude', 1, 2]]:
                                             item['modality'] = m
@@ -412,9 +429,6 @@ def main():
                     if len(filtered_dset):
                         subj_id = list(set(filtered_dset['SubjID']))[0]
                         subj_code = 'sub-{}'.format(subj_id)
-                        # append to participants.tsv one record
-                        with open(os.path.join(root_path, 'participants.tsv'), 'a+') as f:
-                            f.write(subj_code + '\n')
 
                         filtered_dset = completeFieldsCreateFolders(df, filtered_dset, dset, include_session, root_path, subj_code)
 
@@ -461,6 +475,13 @@ def main():
                                     fname = '{}'.format(row.FileName)
                                     build_bids_json(dset, row, fname, json_fname, slope=slope, offset=offset)
                                 list_tested_fn.append(temp_fname)
+
+                        # Record the participant only if at least one scan actually
+                        # converted; otherwise participants.tsv would list a subject
+                        # with no data (BIDS PARTICIPANT_ID_MISMATCH).
+                        if list_tested_fn:
+                            with open(os.path.join(root_path, 'participants.tsv'), 'a+') as f:
+                                f.write(subj_code + '\n')
                         print('...Done.')
             except FileNotValidError:
                 pass
@@ -526,6 +547,27 @@ def cleanSessionID(sess_id):
         warnings.warn('Session ID has "-"s, replaced with "Hyphen" to make it bids compatiable. You should avoid use "-" in session ID for BIDS purpose')
 
     return sess_id
+
+
+def bidsTaskLabel(visu_pars):
+    """A BIDS task label (alphanumeric only) derived from the Bruker protocol name.
+
+    func data must carry a ``task-`` entity; deriving it from the acquisition
+    protocol gives an accurate, user-overridable default.
+    """
+    pars = visu_pars.parameters
+    proto = pars.get('VisuAcquisitionProtocol') or pars.get('VisuAcqSequenceName') or 'task'
+    label = re.sub(r'[^0-9a-zA-Z]', '', str(proto))
+    return label or 'task'
+
+
+def numRepetitions(dset, scan_id):
+    """Number of temporal repetitions (volumes) for a scan; 1 when unknown."""
+    try:
+        nr = dset.get_method(scan_id).parameters.get('PVM_NRepetitions', 1)
+        return int(nr) if nr is not None else 1
+    except Exception:
+        return 1
 
 
 def assignDataType (method):
