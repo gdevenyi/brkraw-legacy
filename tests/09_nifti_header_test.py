@@ -13,13 +13,13 @@ from brkraw_legacy.app.tonifti.header import Header
 
 
 def _scaninfo(slice_order_scheme='Sequential', num_cycles=1, time_step=0.0,
-              repetition_time=None, num_slices=10, slope=1.0, offset=0.0):
+              scan_time=0.0, num_slices=10, slope=1.0, offset=0.0):
     """A minimal ScanInfo stub carrying only what Header reads."""
     return SimpleNamespace(
         slicepack={'slice_order_scheme': slice_order_scheme,
                    'num_slices_each_pack': [num_slices]},
         cycle={'num_cycles': num_cycles, 'time_step': time_step,
-               'repetition_time': repetition_time},
+               'scan_time': scan_time},
         dataarray={'slope': slope, 'offset': offset},
     )
 
@@ -64,30 +64,29 @@ def test_spatial_units_labelled_mm_without_cycles():
     assert out.header.get_xyzt_units()[0] == 'mm'
 
 
-def test_time_step_on_4d_uses_repetition_time():
+def test_time_step_on_4d_is_scantime_per_volume():
     """A 4D series carries mm + sec and a per-volume time step on pixdim[4], taken
-    from the sequence repetition time so it matches the BIDS RepetitionTime sidecar
-    (the old cycle time_step = ScanTime/num_cycles disagreed for e.g. ASL)."""
-    out = _make_header(_scaninfo(repetition_time=2000.0, num_slices=10),
-                       shape=(8, 8, 10, 4))
+    from ScanTime/num_volumes -- the wall-clock time between volumes, i.e. the BIDS
+    func RepetitionTime (which exceeds the sequence TR for multi-shot/averaged EPI).
+    """
+    # 8000 ms scan / 4 volumes -> 2 s per volume
+    out = _make_header(_scaninfo(scan_time=8000.0, num_slices=10), shape=(8, 8, 10, 4))
     assert out.header.get_xyzt_units() == ('mm', 'sec')
-    assert float(out.header['pixdim'][4]) == pytest.approx(2.0)      # 2000 ms -> s
+    assert float(out.header['pixdim'][4]) == pytest.approx(2.0)
     assert float(out.header['slice_duration']) == pytest.approx(2.0 / 10)
 
 
 def test_3d_series_has_no_time_step():
-    """A 3D scan is mm-only with no time step, even when a repetition time exists."""
-    out = _make_header(_scaninfo(repetition_time=2000.0), shape=(8, 8, 10))
+    """A 3D scan is mm-only with no time step, even when a scan time exists."""
+    out = _make_header(_scaninfo(scan_time=8000.0), shape=(8, 8, 10))
     assert out.header.get_xyzt_units()[1] == 'unknown'
     assert float(out.header['pixdim'][4]) == pytest.approx(1.0)      # nibabel default
 
 
-def test_4d_variable_tr_sets_sec_units_without_crashing():
-    """A list VisuAcqRepetitionTime (variable-TR) must not crash: sec units are set
-    but pixdim[4] is left at the default, since no single value represents it (the
-    BIDS RepetitionTime sidecar is likewise omitted)."""
-    out = _make_header(_scaninfo(repetition_time=[500.0, 1000.0, 1500.0]),
-                       shape=(8, 8, 10, 3))
+def test_4d_without_scan_time_sets_sec_units_without_crashing():
+    """A missing/zero ScanTime must not crash: sec units are still set for the 4D
+    series, but pixdim[4] is left at the default (no value to divide)."""
+    out = _make_header(_scaninfo(scan_time=0.0), shape=(8, 8, 10, 3))
     assert out.header.get_xyzt_units() == ('mm', 'sec')
     assert float(out.header['pixdim'][4]) == pytest.approx(1.0)      # left default
 

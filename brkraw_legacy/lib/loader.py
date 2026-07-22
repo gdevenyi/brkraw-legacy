@@ -617,8 +617,15 @@ class BrukerLoader():
         return json_obj
 
     def save_json(self, scan_id, reco_id, filename, dir='./', metadata=None, condition=None,
-                  task_name=None, intended_for=None, num_slices=None):
+                  task_name=None, intended_for=None, num_slices=None, repetition_time=None):
         json_obj = self._parse_json(scan_id, reco_id, metadata)
+
+        # For func, RepetitionTime is the wall-clock time between volumes, which the
+        # converter computes as ScanTime/num_volumes (matching the NIfTI pixdim[4]).
+        # This exceeds the sequence VisuAcqRepetitionTime for multi-shot/averaged
+        # EPI; anat/dwi keep the sequence TR (they pass repetition_time=None).
+        if repetition_time is not None:
+            json_obj['RepetitionTime'] = repetition_time
 
         # SliceTiming must have exactly one entry per reconstructed slice. The
         # mapping derives its length from Bruker NSLICES, which can disagree with

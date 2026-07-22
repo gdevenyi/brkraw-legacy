@@ -180,6 +180,34 @@ def test_end_to_end_passes_validator(lego_study, tmp_path):
         [(e.get('code'), e.get('subCode')) for e in errors])
 
 
+def test_asl_scans_not_auto_classified(lego_study, tmp_path):
+    """FAIR/CASL/perfusion scans must not be auto-classified as bold or anat (BIDS
+    perf/asl is unsupported here); the helper leaves them as 'etc' for the user."""
+    import re
+
+    import pandas as pd
+
+    from brkraw_legacy import BrukerLoader
+
+    sample_parent = tmp_path / 'sample'
+    sample_parent.mkdir()
+    (sample_parent / lego_study.name).symlink_to(lego_study.resolve())
+    sheet = tmp_path / 'map'
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(sample_parent), str(sheet)])
+    df = pd.read_csv(str(sheet) + '.csv')
+
+    loader = BrukerLoader(str(lego_study))
+    asl = [s for s in df['ScanID'].unique()
+           if re.search(r'FAIR|ASL|perfusion',
+                        str(loader.get_method(int(s)).parameters.get('Method', '')),
+                        re.IGNORECASE)]
+    assert asl, 'expected FAIR/CASL scans in the lego phantom'
+    for s in asl:
+        assigned = set(df[df['ScanID'] == s]['DataType'])
+        assert assigned == {'etc'}, \
+            'ASL scan {} classified as {}, expected etc'.format(s, assigned)
+
+
 def test_multiecho_gets_echo_entity(lego_study, tmp_path):
     """A multi-echo scan converts to one BIDS ``_echo-<n>_`` file per echo.
 

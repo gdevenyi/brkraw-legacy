@@ -431,6 +431,24 @@ def get_bids_ref_obj(ref_path, row):
     return ref
 
 
+def func_volume_tr(dset, row, num_volumes):
+    """BIDS func RepetitionTime (seconds): the wall-clock time between volumes.
+
+    For func this is ScanTime/num_volumes, which matches the NIfTI pixdim[4] and,
+    unlike the sequence VisuAcqRepetitionTime, is correct for multi-shot/segmented
+    or averaged EPI (where one volume spans several TRs). Returns None for non-func,
+    non-4D, or when ScanTime is unavailable -- those keep the sequence TR.
+    """
+    if not re.search('func', str(row.DataType), re.IGNORECASE):
+        return None
+    if not num_volumes or num_volumes < 2:
+        return None
+    scan_time = dset.get_visu_pars(row.ScanID, row.RecoID).parameters.get('VisuAcqScanTime')
+    if not isinstance(scan_time, (int, float)) or scan_time <= 0:
+        return None
+    return (scan_time / num_volumes) / 1000.0
+
+
 def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, intended_for=None):
     import pandas as pd
 
@@ -452,9 +470,11 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
             if json_path:
                 ref = get_bids_ref_obj(json_path, row)
                 nslices = nii.shape[2] if nii.ndim >= 3 else 1
+                nvol = nii.shape[3] if nii.ndim >= 4 else 1
                 dset.save_json(row.ScanID, row.RecoID, currentFileName, dir=row.Dir,
                                metadata=ref, condition=['me', echo], task_name=task_name,
-                               num_slices=nslices)
+                               num_slices=nslices,
+                               repetition_time=func_volume_tr(dset, row, nvol))
     else:
         fname = '{}_{}'.format(fname, row.modality)
         dset.save_as(row.ScanID, row.RecoID, fname, dir=row.Dir, crop=crop, slope=slope, offset=offset)
@@ -474,14 +494,17 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
                 # SliceTiming length check inside save_json).
                 import nibabel as nib
                 num_slices = None
+                nvol = 1
                 nii_path = os.path.join(row.Dir, '{}.nii.gz'.format(fname))
                 if os.path.exists(nii_path):
                     shape = nib.load(nii_path).shape
                     num_slices = shape[2] if len(shape) >= 3 else 1
+                    nvol = shape[3] if len(shape) >= 4 else 1
                 dset.save_json(row.ScanID, row.RecoID, fname, dir=row.Dir,
                                metadata=ref, condition=condition,
                                task_name=task_name, intended_for=intended_for,
-                               num_slices=num_slices)
+                               num_slices=num_slices,
+                               repetition_time=func_volume_tr(dset, row, nvol))
 
 
 def encdir_code_converter(enc_param):
