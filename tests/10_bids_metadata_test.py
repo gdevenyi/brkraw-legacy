@@ -92,3 +92,34 @@ def test_slicetiming_follows_interleaved_order():
     assert st.shape == (4,)
     assert np.isclose(st.max(), 1.0 * 3 / 4)       # spans up to (N-1)/N * TR
     assert len(set(np.round(st, 6))) == 4          # all four slice times distinct
+
+
+# --- readout timing (M3) ----------------------------------------------------
+
+def test_effective_echo_spacing_uses_ppi_not_echo_train():
+    """EES divides by the PPI acceleration (default 1), not ACQ_phase_factor.
+
+    ACQ_phase_factor is the RARE/EPI echo-train factor; using it wrongly shrank
+    EES by the echo-train length.
+    """
+    p = _p(VisuAcqPixelBandwidth=200.0, PVM_EncMatrix=[128, 64],
+           VisuAcqGradEncoding=['read_enc', 'phase_enc'],   # phase_enc index 1 -> MatSizePE=64
+           ACQ_phase_factor=8)                              # must be ignored now
+    ees = _resolve('EffectiveEchoSpacing', visu=p)
+    assert ees == pytest.approx(1 / (64 * 200))             # accel defaults to 1, not /8
+
+
+def test_effective_echo_spacing_scales_with_ppi_accel():
+    p = _p(VisuAcqPixelBandwidth=200.0, PVM_EncMatrix=[128, 64],
+           VisuAcqGradEncoding=['read_enc', 'phase_enc'],
+           PVM_EncPpiAccel1=2)
+    ees = _resolve('EffectiveEchoSpacing', visu=p)
+    assert ees == pytest.approx(1 / (64 * 200) / 2)
+
+
+def test_total_readout_time_ignores_ppi_default_and_missing_etl():
+    """TotalReadoutTime computes without VisuAcqEchoTrainLength (unused ETL dropped)
+    and defaults the acceleration to 1 rather than dividing by ACQ_phase_factor."""
+    p = _p(VisuAcqPixelBandwidth=200.0, ACQ_phase_factor=8)  # no ETL, no PPI accel
+    trt = _resolve('TotalReadoutTime', visu=p)
+    assert trt == pytest.approx(1 / 200)
