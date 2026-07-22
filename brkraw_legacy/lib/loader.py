@@ -512,10 +512,44 @@ class BrukerLoader():
             niiobj.to_filename(output_path)
 
     # - FSL bval, bvec, and bmat
-    def save_bdata(self, scan_id, filename, dir='./'):
+    @staticmethod
+    def _reorient_bvecs(bvecs, affine):
+        """Express diffusion gradient vectors in the saved NIfTI voxel frame.
+
+        ``bvecs`` is (3, N) as read from PVM_DwGradVec, assumed to be in the
+        scanner/world frame. The affine maps voxel -> world
+        (world = R.diag(zooms).voxel + t), so a world-frame direction g is
+        R^T @ g in voxel axes, where R is the normalized direction-cosine matrix.
+        For an axis-aligned acquisition R is a signed permutation and this is a
+        no-op up to axis order/sign -- it only rotates OBLIQUE acquisitions, for
+        which the previous unrotated vectors were already wrong.
+
+        CAVEAT: that PVM_DwGradVec is world-frame has not been validated against a
+        phantom with known gradient directions, and the FSL bvec handedness
+        convention is not applied here; verify oblique DWI before trusting the
+        b-vectors for tractography.
+        """
+        rot = np.asarray(affine, dtype=float)[:3, :3]
+        norms = np.linalg.norm(rot, axis=0)
+        norms[norms == 0] = 1.0
+        rot = rot / norms
+        return rot.T @ bvecs
+
+    def save_bdata(self, scan_id, filename, dir='./', reco_id=1):
         method = self._method[scan_id]
         # bval, bvec, bmat = self._get_bdata(method) # [220201] bmat seems not necessary
         bvals, bvecs = self._get_bdata(method)
+        # Reorient the gradient vectors into the saved image's voxel frame so FSL
+        # and BIDS tools read them consistently with the NIfTI. No-op for
+        # axis-aligned scans; only rotates oblique ones. See _reorient_bvecs.
+        try:
+            affine = self.get_affine(scan_id, reco_id)
+            if isinstance(affine, list):
+                affine = affine[0]
+            bvecs = self._reorient_bvecs(bvecs, affine)
+        except Exception as exc:
+            warnings.warn('Could not reorient b-vectors into the image frame '
+                          '({}); writing them unrotated.'.format(exc), UserWarning)
         output_path = os.path.join(dir, filename)
 
         with open('{}.bval'.format(output_path), 'w') as bval_fobj:
