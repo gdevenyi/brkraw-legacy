@@ -2,8 +2,9 @@
 
 Covers the defect found by reviewing the affine code against the Bruker
 ParaVision orientation conventions: ``Foot_Left``/``Foot_Right`` (and their
-``Tail_*`` aliases) were given the *head-first* rotation in the legacy path,
-dropping the feet-first entry flip -- so the two conversion paths disagreed.
+``Tail_*`` aliases) were once given the *head-first* rotation, dropping the
+feet-first entry flip. There is now a single affine implementation
+(``AffineAnalyzer``); these tests pin its pose/type behaviour directly.
 
 Also pins the subject-type behaviour that ParaVision's display convention makes
 look wrong. The Primate system "is also used for subject specimen Unknown",
@@ -15,7 +16,7 @@ import numpy as np
 import pytest
 
 from brkraw_legacy.api.analyzer.affine import AffineAnalyzer
-from brkraw_legacy.lib.orient import apply_rotate
+from brkraw_legacy.api.helper import rotate_affine
 from brkraw_legacy.lib.subject_orient import (
     SUBJECT_POSE_ROTATION,
     get_pose_rotation,
@@ -38,8 +39,8 @@ HEAD_FIRST = {
 
 
 def _rot(**kwargs):
-    """3x3 rotation, same composition as apply_rotate (Rz @ Ry @ Rx)."""
-    return apply_rotate(np.eye(4), **kwargs)[:3, :3]
+    """3x3 rotation, same composition as rotate_affine (Rz @ Ry @ Rx)."""
+    return rotate_affine(np.eye(4), **kwargs)[:3, :3]
 
 
 def _expected(pose):
@@ -146,19 +147,24 @@ def test_pv5_subject_type_not_taken_from_subject_file(h2_study):
     """The loader must not read subject type off a PV5 study.
 
     PV5 writes SUBJECT_type=Human unconditionally, so the resolved type must
-    stay None (unknown -> rodent) rather than becoming Biped. An earlier
-    revision of this change read the subject file and flipped PV5 rodent data
-    into the primate frame; paired PV5/PV6 phantom data caught it.
+    stay None (unknown -> rodent) rather than becoming Biped. The single affine
+    implementation reads VisuSubjectType per-scan (absent on PV5, FILE_FORMAT.md
+    7.5), never the study subject file; this pins that.
     """
     from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.app.tonifti import StudyToNifti
 
     s = BrukerLoader(str(h2_study))
     assert s.pvobj.subj_type == 'Human', 'expected the PV5 subject file to say Human'
     sid = s.pvobj.avail_scan_id[0]
-    info = s._get_orient_info(s.get_visu_pars(sid, 1), s.get_method(sid))
-    assert info['subject_type'] is None, (
+    # Bind the study to a name: Scan stores only id(pvobj) and recovers it via
+    # ctypes, so a temporary StudyToNifti would be GC'd before get_affine_analyzer
+    # dereferences the address.
+    study = StudyToNifti(str(h2_study))
+    analyzer = study.get_scan(sid).get_affine_analyzer(1)
+    assert analyzer.subj_type is None, (
         'PV5 subject type must stay unknown, not be read from SUBJECT_type')
-    assert uses_quadruped_frame(info['subject_type']) is True
+    assert uses_quadruped_frame(analyzer.subj_type) is True
 
 
 def test_biped_not_corrected():
@@ -170,73 +176,30 @@ def test_quadruped_correction_applied_after_pose():
 
     It must left-multiply the pose rotation (Q @ P), not be folded into it,
     otherwise the pose angles would be interpreted in already-rotated axes --
-    the failure mode reported upstream in BrkRaw/brkraw#228.
+    the failure mode reported upstream in BrkRaw/brkraw#228. Exercised on the
+    single affine implementation, ``AffineAnalyzer._correct_orientation``, with
+    the ParaVision subject types Biped/Quadruped (FILE_FORMAT.md 7.5).
     """
-    from brkraw_legacy.lib.orient import build_affine_from_orient_info
-
-    kwargs = dict(resol=(1.0, 1.0, 1.0), rmat=np.eye(3), pose=np.zeros(3),
-                  slice_orient='axial')
-    biped = build_affine_from_orient_info(subj_pose='Head_Supine',
-                                          subj_type='Biped', **kwargs)
-    quad = build_affine_from_orient_info(subj_pose='Head_Supine',
-                                         subj_type='Quadruped', **kwargs)
-    q = apply_rotate(np.eye(4), rad_x=-PI / 2, rad_y=PI)[:3, :3]
+    biped = AffineAnalyzer._correct_orientation(np.eye(4), 'Head_Supine', 'Biped')
+    quad = AffineAnalyzer._correct_orientation(np.eye(4), 'Head_Supine', 'Quadruped')
+    q = rotate_affine(np.eye(4), rad_x=-PI / 2, rad_y=PI)[:3, :3]
     assert np.allclose(quad[:3, :3], q @ biped[:3, :3], atol=1e-9)
 
 
-# --- loader/API path agreement on real data --------------------------------
-
-def test_loader_and_api_affines_agree(lego_study):
-    """The BrukerLoader/CLI path and the app.tonifti/API path must agree.
-
-    They source subject type and assemble affines independently -- the loader in
-    `_get_orient_info`, the API path in `helper.Orientation` -- so they can
-    silently desync. Iterating a whole multi-sequence study pins them together,
-    including the multi-pack and reverse-slice-order scans that used to crash the
-    API path (`.index(2)` on the wrong list for a falsy first pack, a scalar
-    where a slice-distance list was expected). Scans that hit a pre-existing
-    crash in either path are skipped; a quorum keeps the test from passing by
-    comparing nothing.
-    """
-    from brkraw_legacy import BrukerLoader
-    from brkraw_legacy.app.tonifti import StudyToNifti
-
-    loader = BrukerLoader(str(lego_study))
-    api = StudyToNifti(str(lego_study))
-
-    compared = 0
-    for sid in loader.pvobj.avail_scan_id:
-        try:
-            la = loader.get_affine(sid, 1)
-            aa = api.get_affine(sid, 1)
-        except Exception:
-            continue
-        la = la if isinstance(la, list) else [la]
-        aa = aa if isinstance(aa, list) else [aa]
-        if len(la) != len(aa):
-            continue
-        for x, y in zip(la, aa):
-            assert np.allclose(x, y, atol=1e-6), f'scan {sid}: loader and API affines differ'
-        compared += 1
-
-    assert compared >= 5, f'expected to compare several scans, only did {compared}'
-
+# --- API path on real data -------------------------------------------------
 
 def test_unequal_slices_per_pack_converts(lego_study):
-    """Unequal per-pack slice counts must convert, matching the loader.
+    """Unequal per-pack slice counts must convert to one affine per pack.
 
-    lego_phantom scan 8 is a 13-frame scout genuinely packed [5, 3, 5]. Both the
-    SlicePack parser (VisuCoreSlicePacksSlices per-pack counts) and the frame
-    regrouping in Orientation must use those counts rather than assuming an equal
-    split; otherwise the API path crashes. Each pack's affine must match the
-    BrukerLoader path exactly.
+    lego_phantom scan 8 is a 13-frame scout genuinely packed [5, 3, 5]. The
+    SlicePack parser (VisuCoreSlicePacksSlices per-pack counts, FILE_FORMAT.md
+    7.10) and the frame regrouping in Orientation must use those counts rather
+    than assuming an equal split; otherwise assembly crashes. Each pack yields a
+    (4, 4) affine.
     """
-    from brkraw_legacy import BrukerLoader
     from brkraw_legacy.app.tonifti import StudyToNifti
 
-    loader = BrukerLoader(str(lego_study)).get_affine(8, 1)
     api = StudyToNifti(str(lego_study)).get_affine(8, 1)
-    assert isinstance(api, list) and len(api) == len(loader) == 3
-    for la, aa in zip(loader, api):
-        assert np.shape(aa) == (4, 4)
-        assert np.allclose(la, aa, atol=1e-4)
+    assert isinstance(api, list) and len(api) == 3
+    for aff in api:
+        assert np.shape(aff) == (4, 4)

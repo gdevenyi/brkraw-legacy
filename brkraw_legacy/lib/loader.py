@@ -1,10 +1,9 @@
 from .errors import FileNotValidError, InvalidApproach, UnexpectedError
-from .orient import build_affine_from_orient_info, reversed_pose_correction, get_origin
 from .subject_orient import SUBJECT_POSE, SUBJECT_TYPES, normalize_subject_type
 from .pvobj import PvDatasetDir, PvDatasetZip
 from functools import reduce
 from .utils import get_value, is_all_element_same, multiply_all, encdir_code_converter, meta_get_value
-from .orient import to_matvec
+from nibabel.affines import to_matvec
 from .reference import ERROR_MESSAGES, ISSUE_REPORT, COMMON_META_REF
 import numpy as np
 import zipfile
@@ -121,6 +120,7 @@ class BrukerLoader():
         self._path = path
         self._pvobj = load(path)
         self._tonifti = None
+        self._tonifti_scan = None
         self._override_position = None
         self._override_type = None
 
@@ -144,23 +144,41 @@ class BrukerLoader():
             self._tonifti = StudyToNifti(self._path)
         return self._tonifti
 
+    @property
+    def _as_tonifti_scan(self):
+        """Lazily bridge a standalone scan directory to a ScanToNifti.
+
+        ScanToNifti is the app.tonifti scan-level entry; its constructor builds a
+        PvScan from a bare ``acqp``/``method``/``pdata`` directory
+        (FILE_FORMAT.md 1.2). StudyToNifti cannot load this shape because
+        PvStudy registers scans by numbered subdirectory, which an
+        individually-exported scan lacks."""
+        if self._tonifti_scan is None:
+            from brkraw_legacy.app.tonifti import ScanToNifti
+            self._tonifti_scan = ScanToNifti(pathlib.Path(self._path))
+        return self._tonifti_scan
+
+    def _scan_bridge(self, scan_id, reco_id=None):
+        """Return the app.tonifti ScanToNifti for one scan.
+
+        Every image/affine request funnels through here so a single affine and
+        header implementation (AffineAnalyzer + the tonifti Header) serves the
+        loader/CLI path, the BIDS conversion, and the app.tonifti API -- they
+        cannot diverge. A standalone exported scan uses the scan-level entry; a
+        normal study uses the cached StudyToNifti's per-scan ScanToNifti."""
+        if self._is_standalone_scan():
+            return self._as_tonifti_scan
+        return self._as_tonifti.get_scan(scan_id, reco_id)
+
     def _is_standalone_scan(self):
         """True for an individually-exported scan directory (``acqp`` at its root
-        and no numbered scan subdirs) -- a shape BrukerLoader loads but the
-        app.tonifti pvobj layer does not yet handle."""
+        and no numbered scan subdirs). ScanToNifti loads this shape directly (its
+        constructor builds a PvScan from an ``acqp``/``method``/``pdata``
+        directory); StudyToNifti cannot, because PvStudy registers scans by
+        numbered subdirectory. ``_scan_bridge`` routes such scans accordingly."""
         p = pathlib.Path(self._path)
         return (p.is_dir() and (p / 'acqp').exists()
                 and not any(c.is_dir() and c.name.isdigit() for c in p.iterdir()))
-
-    def _assemble_standalone(self, scan_id, reco_id, slope, offset):
-        """Direct NIfTI assembly for a single exported scan (see get_niftiobj)."""
-        from nibabel import Nifti1Image
-        visu_pars = self._get_visu_pars(scan_id, reco_id)
-        method = self._method[scan_id]
-        imgobj = self.get_dataobj(scan_id, reco_id, slope=slope, offset=offset)
-        affine = self._get_affine(visu_pars, method)
-        niiobj = Nifti1Image(imgobj, affine)
-        return self._set_nifti_header(niiobj, visu_pars, method, slope=slope, offset=offset)
 
     @property
     def num_scans(self):
@@ -211,9 +229,14 @@ class BrukerLoader():
         self._pvobj = None
 
     def get_affine(self, scan_id, reco_id):
-        visu_pars = self._get_visu_pars(scan_id, reco_id)
-        method = self._method[scan_id]
-        return self._get_affine(visu_pars, method)
+        # Delegate to the single affine implementation (AffineAnalyzer via the
+        # app.tonifti bridge). Subject-type/position overrides ride through as
+        # explicit args; None lets the analyzer read them per-scan from
+        # VisuSubjectType/VisuSubjectPosition (FILE_FORMAT.md 7.5/7.7).
+        return self._scan_bridge(scan_id, reco_id).get_affine(
+            reco_id=reco_id,
+            subj_type=self._override_type,
+            subj_position=self._override_position)
 
     def _get_dataobj(self, scan_id, reco_id):
         dataobj = self._pvobj.get_dataobj(scan_id, reco_id)
@@ -373,20 +396,19 @@ class BrukerLoader():
     def get_niftiobj(self, scan_id, reco_id, crop=None, slope=False, offset=False):
         """Return a nibabel Nifti1Image (or a list) for a scan.
 
-        Delegates to the app.tonifti API (StudyToNifti) so this loader/CLI path,
-        the BIDS conversion, and the app.tonifti API share one image-assembly
-        implementation and cannot diverge. ``slope``/``offset`` pick the API
-        scale mode: 'apply' bakes the intensity slope/offset into the data,
-        'header' leaves it in scl_slope/scl_inter (the loader default).
+        Delegates to the app.tonifti API so this loader/CLI path, the BIDS
+        conversion, and the app.tonifti API share one image-assembly
+        implementation and cannot diverge. Standalone exported scans route
+        through the scan-level entry, a normal study through StudyToNifti; both
+        resolve to a ScanToNifti via ``_scan_bridge``. ``slope``/``offset`` pick
+        the API scale mode: 'apply' bakes the intensity slope/offset into the
+        data, 'header' leaves it in scl_slope/scl_inter (the loader default).
+        Subject-type/position overrides ride through to the affine.
         """
         scale_mode = 'apply' if (slope or offset) else 'header'
-        if self._is_standalone_scan():
-            # Individually-exported scan dir (no numbered scans): BrukerLoader
-            # loads it but the app.tonifti pvobj layer does not yet, so assemble
-            # it directly from this loader's dataobj/affine.
-            niiobj = self._assemble_standalone(scan_id, reco_id, slope, offset)
-        else:
-            niiobj = self._as_tonifti.get_nifti1image(scan_id, reco_id, scale_mode=scale_mode)
+        niiobj = self._scan_bridge(scan_id, reco_id).get_nifti1image(
+            reco_id=reco_id, scale_mode=scale_mode,
+            subj_type=self._override_type, subj_position=self._override_position)
         if crop is not None:
             from nibabel import Nifti1Image
             sl = slice(crop[0], crop[1])
@@ -408,7 +430,7 @@ class BrukerLoader():
         method = self._method[scan_id]
         res = self._get_spatial_info(visu_pars)['spatial_resol']
         dataobj = self.get_dataobj(scan_id, reco_id, slope=slope, offset=offset)
-        affine = self._get_affine(visu_pars, method)
+        affine = self.get_affine(scan_id, reco_id)
 
         if isinstance(affine, list):
             parser = []
@@ -772,67 +794,6 @@ class BrukerLoader():
     # method to parse information of each scan
     # methods of protocol specific
 
-    def _set_nifti_header(self, niiobj, visu_pars, method, slope, offset):
-        slice_info = self._get_slice_info(visu_pars)
-        niiobj.header.default_x_flip = False
-        temporal_resol = self._get_temp_info(visu_pars)['temporal_resol']
-        temporal_resol = float(temporal_resol) / 1000
-        slice_order = get_value(method, 'PVM_ObjOrderScheme')
-        acq_method = get_value(method, 'Method')
-
-        data_slp, data_off = self._get_dataslp(visu_pars)
-
-        if re.search('epi', acq_method, re.IGNORECASE) and not \
-                re.search('dti', acq_method, re.IGNORECASE):
-
-            niiobj.header.set_xyzt_units(xyz=2, t=8)
-            niiobj.header['pixdim'][4] = temporal_resol
-            niiobj.header.set_dim_info(slice=2)
-            num_slices = slice_info['num_slices_each_pack'][0]
-            niiobj.header['slice_duration'] = temporal_resol / num_slices
-
-            if slice_order == 'User_defined_slice_scheme':
-                niiobj.header['slice_code'] = 0
-            elif slice_order == 'Sequential':
-                niiobj.header['slice_code'] = 1
-            elif slice_order == 'Reverse_sequential':
-                niiobj.header['slice_code'] = 2
-            elif slice_order == 'Interlaced':
-                niiobj.header['slice_code'] = 3
-            elif slice_order == 'Reverse_interlacesd':
-                niiobj.header['slice_code'] = 4
-            elif slice_order == 'Angiopraphy':
-                niiobj.header['slice_code'] = 0
-            else:
-                raise Exception(ERROR_MESSAGES['NotIntegrated'])
-            niiobj.header['slice_start'] = 0
-            niiobj.header['slice_end'] = num_slices - 1
-        else:
-            niiobj.header.set_xyzt_units('mm')
-        if not slope:
-            if slope is not None:
-                if isinstance(data_slp, list):
-                    raise InvalidApproach('Invalid slope size;'
-                                          'The vector type scl_slope cannot be set in nifti header.')
-                niiobj.header['scl_slope'] = data_slp
-            else:
-                niiobj.header['scl_slope'] = 1
-        else:
-            niiobj.header['scl_slope'] = 1
-        if not offset:
-            if offset is not None:
-                if isinstance(data_off, list):
-                    raise InvalidApproach('Invalid offset size;'
-                                          'The vector type scl_offset cannot be set in nifti header.')
-                niiobj.header['scl_inter'] = data_off
-            else:
-                niiobj.header['scl_inter'] = 0
-        else:
-            niiobj.header['scl_inter'] = 0
-        niiobj.set_qform(niiobj.affine, 1)
-        niiobj.set_sform(niiobj.affine, 0)
-        return niiobj
-
     # EPI
     def _get_temp_info(self, visu_pars):
         """return temporal resolution for each volume of image"""
@@ -1021,137 +982,6 @@ class BrukerLoader():
                     slice_distances_each_pack  = slice_distances_each_pack,
                     unit_slice_distances       = 'mm'
                     )
-
-    def _get_orient_info(self, visu_pars, method):
-
-        def get_axis_orient(orient_matrix):
-            """return indice of axis orientation profiles"""
-            return [np.argmax(abs(orient_matrix[:, 0])),
-                    np.argmax(abs(orient_matrix[:, 1])),
-                    np.argmax(abs(orient_matrix[:, 2]))]
-
-        omatrix_parser  = []
-        oorder_parser   = []
-        vposition_parser = []
-
-        orient_matrix = get_value(visu_pars, 'VisuCoreOrientation').tolist()
-        slice_info = self._get_slice_info(visu_pars)
-        slice_position = get_value(visu_pars, 'VisuCorePosition')
-        if self._override_position is not None: # add option to override
-            subj_position = self._override_position
-        else:
-            subj_position = get_value(visu_pars, 'VisuSubjectPosition')
-        gradient_orient = get_value(method, 'PVM_SPackArrGradOrient')
-
-        if slice_info['num_slice_packs'] > 1:
-            num_ori_mat = len(orient_matrix)
-            num_slice_packs = slice_info['num_slice_packs']
-            if num_ori_mat != num_slice_packs:
-                mpms = True
-                # multi slice packs with multiple slices each: one orientation
-                # matrix per slice. Group by each pack's actual slice count
-                # (packs may differ in size) and require a consistent orientation
-                # within a pack.
-                num_slices_each_pack = slice_info['num_slices_each_pack']
-                if sum(num_slices_each_pack) != num_ori_mat:
-                    raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
-                cut_idx = 0
-                _orient_matrix = []
-                _slice_position = []
-                for ci in range(num_slice_packs):
-                    n_slices = num_slices_each_pack[ci]
-                    om_set = orient_matrix[cut_idx:cut_idx + n_slices]
-                    sp_set = slice_position[cut_idx:cut_idx + n_slices]
-                    if is_all_element_same(om_set):
-                        _orient_matrix.append(om_set[0])
-                        _slice_position.append(sp_set)
-                    else:
-                        raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
-                    cut_idx += n_slices
-                orient_matrix = _orient_matrix
-                slice_position = _slice_position
-            else:
-                mpms = False
-
-            for id, _om in enumerate(orient_matrix):
-                om = np.asarray(_om).reshape([3, 3])
-                omatrix_parser.append(om)
-                oorder_parser.append(get_axis_orient(om))
-                if mpms:
-                    vposition_parser.append(get_origin(slice_position[id], gradient_orient))
-                else:
-                    vposition_parser.append(slice_position[id])
-
-        else:
-            # check num_slices of first slice_pack
-            if is_all_element_same(orient_matrix):
-                orient_matrix = orient_matrix[0]
-            else:
-                raise Exception(ERROR_MESSAGES['NumOrientMatrix'])
-            try:
-                slice_position = get_origin(slice_position, gradient_orient)
-            except Exception:
-                raise Exception(ERROR_MESSAGES['NumSlicePosition'])
-
-            omatrix_parser = np.asarray(orient_matrix).reshape([3, 3])
-            oorder_parser = get_axis_orient(omatrix_parser)
-            vposition_parser = slice_position
-
-        if self._override_type is not None: # add option to override
-            subj_type = self._override_type
-        else:
-            # Deliberately NOT falling back to the study-level SUBJECT_type:
-            # PV5 writes 'Human' for every study regardless of specimen, so
-            # reading it would put PV5 rodent data in the primate frame. Absent
-            # here means unknown, handled by uses_quadruped_frame().
-            subj_type = get_value(visu_pars, 'VisuSubjectType')
-
-        return dict(subject_type = subj_type,
-                    subject_position = subj_position,
-                    volume_position = vposition_parser,
-                    orient_matrix = omatrix_parser,
-                    orient_order  = oorder_parser,
-                    gradient_orient = gradient_orient,
-                    )
-
-    def _get_affine(self, visu_pars, method):
-        is_reversed = True if self._get_disk_slice_order(visu_pars) == 'reverse' else False
-        slice_info = self._get_slice_info(visu_pars)
-        spatial_info = self._get_spatial_info(visu_pars)
-        orient_info = self._get_orient_info(visu_pars, method)
-        slice_orient_map = {0: 'sagital', 1: 'coronal', 2: 'axial'}
-        num_slice_packs = slice_info['num_slice_packs']
-        subj_pose = orient_info['subject_position']
-        subj_type = orient_info['subject_type']
-
-        if num_slice_packs > 1:
-            affine = []
-            for slice_idx in range(num_slice_packs):
-                sidx = orient_info['orient_order'][slice_idx].index(2)
-                slice_orient = slice_orient_map[sidx]
-                resol = spatial_info['spatial_resol'][slice_idx]
-                rmat = orient_info['orient_matrix'][slice_idx]
-                pose = orient_info['volume_position'][slice_idx]
-                if is_reversed:
-                    raise UnexpectedError('Invalid VisuCoreDiskSliceOrder;'
-                                          'The multi-slice-packs dataset reversed is not tested data.'
-                                          '{}'.format(ISSUE_REPORT))
-                affine.append(build_affine_from_orient_info(resol, rmat, pose,
-                                                            subj_pose, subj_type,
-                                                            slice_orient))
-        else:
-            sidx = orient_info['orient_order'].index(2)
-            slice_orient = slice_orient_map[sidx]
-            resol = spatial_info['spatial_resol'][0]
-            rmat = orient_info['orient_matrix']
-            pose = orient_info['volume_position']
-            if is_reversed:
-                distance = slice_info['slice_distances_each_pack'][0]
-                pose = reversed_pose_correction(pose, rmat, distance)
-            affine = build_affine_from_orient_info(resol, rmat, pose,
-                                                   subj_pose, subj_type,
-                                                   slice_orient)
-        return affine
 
     def _get_matrix_size(self, visu_pars, dataobj=None):
 

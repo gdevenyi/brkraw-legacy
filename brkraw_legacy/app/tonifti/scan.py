@@ -28,23 +28,36 @@ class ScanToNifti(Scan, BaseMethods):
         else:
             if len(paths) == 1 and paths[0].is_dir():
                 abspath = paths[0].absolute()
-                print(abspath)
                 if contents := self._is_pvscan(abspath):
-                    pvobj = self._construct_pvscan(abspath, contents)                
+                    pvobj = self._construct_pvscan(abspath, contents)
                 elif contents := self._is_pvreco(abspath):
                     pvobj = self._construct_pvreco(abspath, contents)
             else:
                 pvobj = PvFiles(*paths)
+            # Scan stores only id(pvobj) and recovers it via ctypes from that
+            # address (retrieve_pvobj). Here we own the only reference to the
+            # pvobj we just built, so anchor it -- otherwise it is garbage
+            # collected when __init__ returns and retrieve_pvobj casts a stale
+            # address. The study path doesn't need this: PvStudy holds its scans.
+            self._owned_pvobj = pvobj
             super().__init__(pvobj=pvobj, reco_id=pvobj._reco_id)
 
     @staticmethod
     def _construct_pvscan(path: 'Path', contents: 'OrderedDict') -> 'PvScan':
-        ref_paths = (path.parent, path.name)
         scan_id = int(path.name) if path.name.isdigit() else None
+        # base._fileobject builds the scan subpath from scan_id, not from the
+        # path tuple. A numbered scan dir sits under its parent
+        # (rootpath/<scan_id>/...), but a named standalone export (e.g.
+        # 'T1_FLASH') has no numeric scan subdir, so scan_id is None and the scan
+        # directory itself must be the rootpath -- otherwise acqp/method resolve
+        # against the parent and are not found.
+        ref_paths = (path.parent, path.name) if scan_id is not None else (path, path.name)
         pvscan = PvScan(scan_id, ref_paths, contents)
         for reco_path in (path/'pdata').iterdir():
             if contents := ScanToNifti._is_pvreco(reco_path):
-                reco_id = reco_path.name
+                # PROCNO dirs are numeric; keep reco_id an int to match the reco
+                # keys the rest of the model (and get_reco lookups) use.
+                reco_id = int(reco_path.name) if reco_path.name.isdigit() else reco_path.name
                 pvscan.set_reco(reco_path, reco_id, contents)
         return pvscan
     

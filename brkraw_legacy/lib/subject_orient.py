@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """Canonical subject-position and subject-type handling.
 
-Single source of truth for the two conversion paths that need it:
+Single source of truth for the pose/type table used by the one affine
+implementation, ``brkraw_legacy.api.analyzer.affine.AffineAnalyzer`` (reached by
+the ``app.tonifti`` API and, through it, the ``BrukerLoader`` / ``tonii`` CLI).
 
-* ``brkraw_legacy.lib.orient``            -- legacy ``BrukerLoader`` / ``tonii`` CLI
-* ``brkraw_legacy.api.analyzer.affine``   -- ``app.tonifti`` API
-
-These used to carry independent copies of the table below, which is how they
-drifted apart (the legacy copy gave ``Foot_Left``/``Foot_Right`` the *head-first*
-rotation).  Keep the table here only.
+A now-deleted second implementation (``brkraw_legacy.lib.orient``, used by the
+legacy loader path) once carried an independent copy of the table below, which
+is how the two drifted apart (that copy gave ``Foot_Left``/``Foot_Right`` the
+*head-first* rotation).  Keep the table here only.
 
 References
 ----------
