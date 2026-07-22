@@ -27,8 +27,10 @@ class Header:
         self.nifti1image.header.default_x_flip = False
         self._set_scale_params()
         self._set_sliceorder()
+        self._set_slice_extent()
         self._set_time_step()
         self._set_sform_qform()
+        self._set_cal_and_descrip()
         
     def _set_sliceorder(self):
         # Bruker PVM_ObjOrderScheme -> NIfTI slice_code. Enum spellings are taken
@@ -53,6 +55,17 @@ class Header:
             )
         self.nifti1image.header['slice_code'] = slice_code
 
+    def _set_slice_extent(self):
+        # A slice_code is inert without the slice axis and the slice range it
+        # applies to. The assembly pipeline always places the slice axis third
+        # (k), spanning the whole volume, so record that. The freq/phase entries
+        # of dim_info are left unset here: mapping them onto the reoriented image
+        # axes belongs with PhaseEncodingDirection, not this field.
+        if self.nifti1image.ndim >= 3:
+            self.nifti1image.header.set_dim_info(slice=2)
+            self.nifti1image.header['slice_start'] = 0
+            self.nifti1image.header['slice_end'] = self.nifti1image.shape[2] - 1
+
     def _set_time_step(self):
         # Bruker voxel geometry is always in mm; label the spatial units
         # unconditionally so they are not left NIFTI_UNITS_UNKNOWN. Cine/cycle
@@ -75,6 +88,26 @@ class Header:
         affine = self.nifti1image.affine
         self.nifti1image.header.set_qform(affine, code=1)
         self.nifti1image.header.set_sform(affine, code=1)
+
+    def _set_cal_and_descrip(self):
+        # cal_min/cal_max give viewers a default display window; NIfTI expects
+        # them in true (post-scaling) units. With scalar scl_slope/scl_inter in
+        # the header the stored data is raw, so scale the min/max to true units
+        # (a negative slope flips the ordering). When scaling is baked into the
+        # data ('apply') or is per-frame, the array already holds true values.
+        self.nifti1image.header['descrip'] = b'brkraw-legacy'
+        data = np.asarray(self.nifti1image.dataobj)
+        if not data.size:
+            return
+        lo, hi = float(np.nanmin(data)), float(np.nanmax(data))
+        if self.scale_mode:
+            slope = self.info.dataarray['slope']
+            inter = self.info.dataarray['offset']
+            if not (np.ndim(slope) or np.ndim(inter)):
+                lo, hi = slope * lo + inter, slope * hi + inter
+                lo, hi = min(lo, hi), max(lo, hi)
+        self.nifti1image.header['cal_min'] = lo
+        self.nifti1image.header['cal_max'] = hi
 
     def _set_scale_params(self):
         if self.scale_mode:

@@ -23,9 +23,10 @@ def _scaninfo(slice_order_scheme='Sequential', num_cycles=1, time_step=0.0,
     )
 
 
-def _make_header(info, shape=(8, 8, 10), affine=None, scale_mode='header'):
+def _make_header(info, shape=(8, 8, 10), affine=None, scale_mode='header', data=None):
     affine = np.diag([0.3, 0.3, 0.7, 1.0]) if affine is None else affine
-    nii = nib.Nifti1Image(np.zeros(shape, dtype='int16'), affine)
+    arr = np.zeros(shape, dtype='int16') if data is None else data
+    nii = nib.Nifti1Image(arr, affine)
     return Header(scaninfo=info, nifti1image=nii, scale_mode=scale_mode).get()
 
 
@@ -88,3 +89,29 @@ def test_sform_and_qform_both_scanner_anat(tmp_path):
     assert int(h['sform_code']) == 1
     assert np.allclose(h.get_sform(), affine, atol=1e-4)
     assert np.allclose(h.get_qform(), affine, atol=1e-4)
+
+
+def test_slice_extent_records_axis_and_range():
+    """slice_start/end and the slice axis of dim_info are set (L1 regression).
+
+    Without these, a non-zero slice_code cannot be applied by slice-timing tools.
+    The slice axis is always third; freq/phase are left unset here.
+    """
+    out = _make_header(_scaninfo(), shape=(8, 8, 10))
+    assert out.header.get_dim_info() == (None, None, 2)
+    assert int(out.header['slice_start']) == 0
+    assert int(out.header['slice_end']) == 9        # shape[2] - 1
+
+
+def test_cal_range_in_true_units_and_descrip():
+    """cal_min/cal_max are the data range in true units; descrip is set (L2).
+
+    With scl_slope=2/scl_inter=5 in the header the stored range [10, 200] maps to
+    a true display range [25, 405].
+    """
+    arr = np.full((8, 8, 10), 10, dtype='int16')
+    arr.flat[0] = 200
+    out = _make_header(_scaninfo(slope=2.0, offset=5.0), data=arr, scale_mode='header')
+    assert float(out.header['cal_min']) == pytest.approx(25.0)     # 2*10 + 5
+    assert float(out.header['cal_max']) == pytest.approx(405.0)    # 2*200 + 5
+    assert bytes(out.header['descrip']).rstrip(b'\x00') == b'brkraw-legacy'
