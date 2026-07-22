@@ -305,10 +305,21 @@ def main():
 
                                     datatype = assignDataType(method)
 
+                                    # ASL / perfusion (FAIR, (p)CASL, PASL, ...) is
+                                    # neither BOLD nor anatomical; it belongs in BIDS
+                                    # perf/asl, which is not emitted here. Leave it
+                                    # unclassified rather than mislabel it.
+                                    if re.search(r'FAIR|ASL|perfusion', method, re.IGNORECASE):
+                                        datatype = 'etc'
+                                        warnings.warn('ScanID:[{}] looks like ASL/perfusion ({}); BIDS '
+                                                      'perf/asl is not supported, marked as "etc". Set '
+                                                      'DataType/modality in the datasheet to convert it.'
+                                                      ''.format(scan_id, method))
+
                                     # A BOLD time-series needs >1 volume; a single-
                                     # repetition EPI is not bold (BIDS BOLD_NOT_4D).
                                     # Leave it unclassified so the user can decide.
-                                    if datatype == 'func' and numRepetitions(dset, scan_id) <= 1:
+                                    elif datatype == 'func' and numRepetitions(dset, scan_id) <= 1:
                                         datatype = 'etc'
                                         warnings.warn('ScanID:[{}] is a single-volume EPI '
                                                       '(PVM_NRepetitions<=1), not a BOLD time-series. '

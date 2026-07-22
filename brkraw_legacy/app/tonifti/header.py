@@ -71,20 +71,21 @@ class Header:
         # unconditionally so they are not left NIFTI_UNITS_UNKNOWN. A 4D series
         # additionally carries a per-volume time step (seconds) on pixdim[4].
         #
-        # The step is the sequence repetition time (VisuAcqRepetitionTime), the
-        # same source BIDS RepetitionTime is derived from, so the NIfTI header and
-        # the JSON sidecar always agree (avoids BIDS REPETITION_TIME_MISMATCH). The
-        # old cycle time_step (VisuAcqScanTime/num_cycles) is a per-cycle interval
-        # that disagrees with RepetitionTime whenever a cycle spans more than one
-        # volume (e.g. tag/control ASL), and it was only applied when a cycle frame
-        # group was detected -- leaving other 4D series with unset time units.
+        # The step is the wall-clock time between volumes = VisuAcqScanTime /
+        # number-of-volumes. For func this is exactly the BIDS RepetitionTime
+        # (which the converter derives the same way), so the NIfTI header and the
+        # JSON sidecar agree (avoids BIDS REPETITION_TIME_MISMATCH). It also
+        # correctly exceeds the sequence VisuAcqRepetitionTime for multi-shot /
+        # segmented or averaged acquisitions, where one volume spans several TRs.
+        # (The old cycle time_step = ScanTime/num_cycles is a per-cycle interval
+        # that disagrees whenever a cycle spans more than one volume, and it only
+        # ran when a cycle frame group was detected.)
         if self.nifti1image.ndim >= 4:
-            tr_ms = self.info.cycle.get('repetition_time')
-            # VisuAcqRepetitionTime is a list for variable-TR sequences (e.g. RARE-VTR);
-            # a single pixdim[4] cannot represent that, and the BIDS RepetitionTime
-            # sidecar is likewise omitted, so set the step only for a scalar TR.
-            if isinstance(tr_ms, (int, float, np.integer, np.floating)) and not isinstance(tr_ms, bool):
-                time_step = tr_ms / 1000
+            scan_time = self.info.cycle.get('scan_time')
+            num_volumes = self.nifti1image.shape[3]
+            if isinstance(scan_time, (int, float, np.integer, np.floating)) \
+                    and not isinstance(scan_time, bool) and scan_time > 0 and num_volumes:
+                time_step = (scan_time / num_volumes) / 1000
                 self.nifti1image.header['pixdim'][4] = time_step
                 num_slices = self.info.slicepack['num_slices_each_pack'][0]
                 if num_slices:

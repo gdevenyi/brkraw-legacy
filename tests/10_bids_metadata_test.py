@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 
 from brkraw_legacy.lib.reference import COMMON_META_REF, FMRI_META_REF
-from brkraw_legacy.lib.utils import meta_get_value, meta_check_express
+from brkraw_legacy.lib.utils import meta_get_value, meta_check_express, func_volume_tr
 
 
 def _p(**params):
@@ -196,6 +196,23 @@ def test_repetition_time_emitted_for_every_scan():
     assert 'RepetitionTime' not in FMRI_META_REF
     rt = _resolve('RepetitionTime', visu=_p(VisuAcqRepetitionTime=2500.0))
     assert rt == pytest.approx(2.5)                 # ms -> s
+
+
+def test_func_volume_tr_is_scantime_over_volumes():
+    """func RepetitionTime is the volume-to-volume wall-clock time (ScanTime/nvol),
+    which exceeds the sequence VisuAcqRepetitionTime for multi-shot/averaged EPI."""
+    def _dset(scan_time):
+        vp = SimpleNamespace(parameters={'VisuAcqScanTime': scan_time})
+        return SimpleNamespace(get_visu_pars=lambda s, r: vp)
+
+    func = SimpleNamespace(DataType='func', ScanID=1, RecoID=1)
+    # 2-shot FAIR-like: 72000 ms / 12 volumes -> 6.0 s (not the 3.0 s sequence TR)
+    assert func_volume_tr(_dset(72000.0), func, 12) == pytest.approx(6.0)
+    # single volume, non-func, or missing ScanTime -> None (keep the sequence TR)
+    assert func_volume_tr(_dset(72000.0), func, 1) is None
+    assert func_volume_tr(_dset(72000.0),
+                          SimpleNamespace(DataType='anat', ScanID=1, RecoID=1), 12) is None
+    assert func_volume_tr(_dset(None), func, 12) is None
 
 
 def test_common_and_fmri_refs_do_not_share_keys():
