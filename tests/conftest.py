@@ -5,6 +5,7 @@ files -- so the suite is reproducible on any checkout:
 
 * 0.2H2 (PV5.1, 32 exp)          -- zenodo.org/records/4048286
 * lego_phantom (PV6.0.1, 45 exp) -- zenodo.org/records/4048253
+* PV7.0.0 LEGO_PHANTOM_API_TEST  -- zenodo.org/records/4522220
 * PV360 v3.6 std data            -- github.com/cecilyen/PV360_StdData
 
 Datasets are cached under ``$BRKRAW_TEST_DATA_DIR`` (default: a temp dir) so a
@@ -33,7 +34,7 @@ def pytest_configure(config):
 
 
 #: Tests requesting any of these fixtures are network-bound; auto-mark them.
-_DATA_FIXTURES = {'dataset', 'h2_study', 'lego_study', 'pv360_root'}
+_DATA_FIXTURES = {'dataset', 'h2_study', 'lego_study', 'pv360_root', 'pv7_study'}
 
 
 @pytest.hookimpl(tryfirst=True)  # add marks before -m deselection runs
@@ -138,6 +139,15 @@ def lego_study():
 
 
 @pytest.fixture(scope='session')
+def pv7_study():
+    """PV7.0.0 multi-sequence phantom study (Zenodo 4522220, LEGO_PHANTOM_API_TEST)."""
+    root = _fetch_zenodo_study(4522220, '20210128_122257_LEGO_PHANTOM_API_TEST_1_1.zip')
+    if root is None:
+        pytest.skip('PV7 LEGO_PHANTOM (Zenodo 4522220) unavailable')
+    return root
+
+
+@pytest.fixture(scope='session')
 def pv360_root():
     """PV360 v3.6 standard phantom: a collection of loose scan dirs (no subject)."""
     root = _clone('https://github.com/cecilyen/PV360_StdData.git',
@@ -148,6 +158,7 @@ def pv360_root():
 
 
 @pytest.fixture(scope='session')
-def dataset(h2_study, lego_study):
-    """Proper multi-scan studies keyed by index (0.2H2 PV5.1, lego_phantom PV6.0.1)."""
-    return {0: PvStudy(h2_study), 1: PvStudy(lego_study)}
+def dataset(h2_study, lego_study, pv7_study):
+    """Proper multi-scan studies keyed by index (0.2H2 PV5.1, lego_phantom PV6.0.1,
+    LEGO_PHANTOM_API_TEST PV7.0.0)."""
+    return {0: PvStudy(h2_study), 1: PvStudy(lego_study), 2: PvStudy(pv7_study)}
