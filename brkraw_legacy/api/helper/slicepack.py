@@ -46,7 +46,15 @@ class SlicePack(BaseHelper):
     
         self.num_slice_packs = num_slice_packs
         self.num_slices_each_pack = num_slices_each_pack
-        self.slice_distances_each_pack = slice_distances_each_pack
+        # One distance per pack, as a scalar: a derived reconstruction whose
+        # frames are a non-spatial group (e.g. an ISA parametric map such as an
+        # MGE T2* map) can store VisuCoreFrameThickness per frame, which would
+        # otherwise leave a ragged (x, y, z) resolution and crash affine
+        # composition. Collapse any per-frame list to the single slice thickness.
+        self.slice_distances_each_pack = [
+            d[0] if isinstance(d, (list, tuple)) else d
+            for d in slice_distances_each_pack
+        ]
         self.slice_order_scheme = method.get("PVM_ObjOrderScheme")
         
         disk_slice_order = visu_pars.get("VisuCoreDiskSliceOrder") or 'normal'
