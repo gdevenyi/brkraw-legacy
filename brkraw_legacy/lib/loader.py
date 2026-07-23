@@ -535,10 +535,20 @@ class BrukerLoader():
         rot = rot / norms
         return rot.T @ bvecs
 
-    def save_bdata(self, scan_id, filename, dir='./', reco_id=1):
+    def save_bdata(self, scan_id, filename, dir='./', reco_id=1, num_volumes=None):
         method = self._method[scan_id]
         # bval, bvec, bmat = self._get_bdata(method) # [220201] bmat seems not necessary
         bvals, bvecs = self._get_bdata(method)
+        # A multi-cycle/repetition DWI keeps every repeat as a separate volume, so
+        # the image holds an integer multiple of the per-direction gradient count
+        # with the diffusion block repeated per cycle (FG_CYCLE is the outer frame
+        # group). Tile bval/bvec to one entry per volume so they match the NIfTI
+        # (a per-direction count vs a multi-volume image is BIDS VOLUME_COUNT_MISMATCH).
+        if num_volumes and len(bvals) and num_volumes > len(bvals) \
+                and num_volumes % len(bvals) == 0:
+            reps = num_volumes // len(bvals)
+            bvals = np.tile(bvals, reps)
+            bvecs = np.tile(bvecs, reps)
         # Reorient the gradient vectors into the saved image's voxel frame so FSL
         # and BIDS tools read them consistently with the NIfTI. No-op for
         # axis-aligned scans; only rotates oblique ones. See _reorient_bvecs.
