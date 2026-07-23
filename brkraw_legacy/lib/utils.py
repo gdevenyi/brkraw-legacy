@@ -476,31 +476,30 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
                                num_slices=nslices,
                                repetition_time=func_volume_tr(dset, row, nvol))
     else:
-        fname = '{}_{}'.format(fname, row.modality)
-        dset.save_as(row.ScanID, row.RecoID, fname, dir=row.Dir, crop=crop, slope=slope, offset=offset)
-        if re.search('dwi', row.modality, re.IGNORECASE):
-            # DTI parameter (FSL style)
-            dset.save_bdata(row.ScanID, fname, dir=row.Dir, reco_id=row.RecoID)
-        if json_path:
-            ref = get_bids_ref_obj(json_path, row)
-            if re.search('fieldmap', row.modality, re.IGNORECASE):
-                condition = ['fm', None]
+        niiobj = dset.get_niftiobj(row.ScanID, row.RecoID, crop=crop, slope=slope, offset=offset)
+        # A multi-slicepack acquisition reconstructs to several images. Give each a
+        # BIDS ``chunk-`` entity (with its own sidecar / bval-bvec) rather than
+        # appending an invalid ``-NN`` suffix to the stem and leaving one shared
+        # sidecar with no matching data file.
+        chunks = niiobj if isinstance(niiobj, list) else [niiobj]
+        for i, nii in enumerate(chunks):
+            if len(chunks) > 1:
+                current = '{}_chunk-{}_{}'.format(fname, str(i + 1).zfill(2), row.modality)
             else:
-                condition = None
-            if re.search('magnitude', row.modality, re.IGNORECASE):
-                pass  # magnitude data does not require JSON (BIDS)
-            else:
-                # Slice count from the just-written NIfTI (authoritative for the
+                current = '{}_{}'.format(fname, row.modality)
+            nii.to_filename(os.path.join(row.Dir, '{}.nii.gz'.format(current)))
+            if re.search('dwi', row.modality, re.IGNORECASE):
+                # DTI parameter (FSL style)
+                dset.save_bdata(row.ScanID, current, dir=row.Dir, reco_id=row.RecoID)
+            # magnitude data does not require JSON (BIDS)
+            if json_path and not re.search('magnitude', row.modality, re.IGNORECASE):
+                ref = get_bids_ref_obj(json_path, row)
+                condition = ['fm', None] if re.search('fieldmap', row.modality, re.IGNORECASE) else None
+                # Slice/volume counts from the written image (authoritative for the
                 # SliceTiming length check inside save_json).
-                import nibabel as nib
-                num_slices = None
-                nvol = 1
-                nii_path = os.path.join(row.Dir, '{}.nii.gz'.format(fname))
-                if os.path.exists(nii_path):
-                    shape = nib.load(nii_path).shape
-                    num_slices = shape[2] if len(shape) >= 3 else 1
-                    nvol = shape[3] if len(shape) >= 4 else 1
-                dset.save_json(row.ScanID, row.RecoID, fname, dir=row.Dir,
+                num_slices = nii.shape[2] if nii.ndim >= 3 else 1
+                nvol = nii.shape[3] if nii.ndim >= 4 else 1
+                dset.save_json(row.ScanID, row.RecoID, current, dir=row.Dir,
                                metadata=ref, condition=condition,
                                task_name=task_name, intended_for=intended_for,
                                num_slices=num_slices,

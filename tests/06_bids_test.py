@@ -447,3 +447,29 @@ def test_derived_reconstructions_not_auto_classified(h2_study, tmp_path):
             assert row.DataType == 'etc', \
                 'derived reco {}/{} classified as {}'.format(row.ScanID, row.RecoID, row.DataType)
     assert n_derived, 'expected at least one derived (FG_ISA/FG_DTI) reconstruction'
+
+
+def test_multislicepack_uses_chunk_entity(h2_study, tmp_path):
+    """A multi-slicepack reconstruction (e.g. the 0.2H2 fieldmap) must split with
+    the BIDS chunk- entity plus a sidecar per chunk, not an invalid '-NN' filename
+    suffix that leaves the shared sidecar orphaned."""
+    import re
+
+    sample = tmp_path / 'sample'
+    sample.mkdir()
+    (sample / h2_study.name).symlink_to(h2_study.resolve())
+    sheet = tmp_path / 'map'
+    out = tmp_path / 'out'
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(sample), str(sheet), '-j'])
+    subprocess.check_call(['brkraw-legacy', 'bids_convert', str(sample),
+                           str(sheet) + '.csv', '-j', str(sheet) + '.json',
+                           '--output', str(out)])
+    niis = list(out.rglob('*.nii.gz'))
+    bad = [p.name for p in niis if re.search(r'-\d{2}\.nii\.gz$', p.name)]
+    assert not bad, 'invalid -NN split filenames: {}'.format(bad)
+    chunked = [p for p in niis if '_chunk-' in p.name]
+    assert chunked, 'expected chunk- split outputs (0.2H2 fieldmap)'
+    for p in chunked:
+        if '_magnitude' not in p.name:   # magnitude needs no sidecar
+            assert p.with_name(p.name.replace('.nii.gz', '.json')).exists(), \
+                'orphaned/missing sidecar for {}'.format(p.name)
