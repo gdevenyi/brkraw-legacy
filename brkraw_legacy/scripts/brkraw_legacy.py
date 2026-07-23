@@ -549,6 +549,17 @@ def cleanSubjectID(subj_id):
         subj_id = subj_id.replace('-', 'Hyphen')
         # warn user that the subject/participantID has a '-' and is replaced with 'Hyphen'
         warnings.warn('Participant or subject ID has "-"s, replaced with "Hyphen" to make it bids compatiable. You should avoid use "-" in participant/subject ID for BIDS purpose')
+
+    # A BIDS label must be alphanumeric; drop any remaining special characters
+    # (e.g. the '.' in a version-derived id like '3.7'), which are invalid in a
+    # sub-<label> and make every file under the subject unrecognizable to the
+    # BIDS validator.
+    cleaned = re.sub(r'[^a-zA-Z0-9]', '', subj_id)
+    if cleaned != subj_id:
+        warnings.warn('Participant or subject ID had non-alphanumeric characters; '
+                      'removed to make it BIDS compatible. Avoid special characters '
+                      'in participant/subject IDs.')
+        subj_id = cleaned
     return subj_id
 
 
@@ -575,6 +586,14 @@ def cleanSessionID(sess_id):
         sess_id = sess_id.replace('-', 'Hyphen')
         # warn user that the subject/participantID has a '-' and is replaced with 'Hyphen'
         warnings.warn('Session ID has "-"s, replaced with "Hyphen" to make it bids compatiable. You should avoid use "-" in session ID for BIDS purpose')
+
+    # A BIDS label must be alphanumeric; drop any remaining special characters
+    # (e.g. a '.' in a version-derived id), invalid in a ses-<label>.
+    cleaned = re.sub(r'[^a-zA-Z0-9]', '', sess_id)
+    if cleaned != sess_id:
+        warnings.warn('Session ID had non-alphanumeric characters; removed to make '
+                      'it BIDS compatible. Avoid special characters in session IDs.')
+        sess_id = cleaned
 
     return sess_id
 
