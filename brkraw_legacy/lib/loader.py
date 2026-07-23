@@ -668,6 +668,12 @@ class BrukerLoader():
         if task_name is not None:
             json_obj['TaskName'] = task_name
 
+        # SoftwareVersions is a string in the BIDS schema, but Bruker version
+        # fields like <6.0> parse to a float; coerce a present value to str so it
+        # validates (a None value is omitted just below).
+        if json_obj.get('SoftwareVersions') is not None:
+            json_obj['SoftwareVersions'] = str(json_obj['SoftwareVersions'])
+
         # Omit unmapped fields entirely rather than writing placeholder strings;
         # BIDS sidecars should only contain known values.
         json_obj = {k: v for k, v in json_obj.items() if v is not None}

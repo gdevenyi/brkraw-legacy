@@ -204,6 +204,12 @@ def main():
                     sess_path = os.path.join(subj_path, 'ses-{}'.format(study._pvobj.study_id))
                     mkdir(sess_path)
                     for scan_id, recos in study._pvobj.avail_reco_id.items():
+                        if scan_id not in study._pvobj._method:
+                            # A scan can carry reconstruction data (2dseq) without a
+                            # method file (e.g. an adjustment/reference scan). Skip it
+                            # rather than KeyError on the method lookup below.
+                            print('ScanID:{} has no method file; skipping.'.format(scan_id))
+                            continue
                         if ignore_localizer and is_localizer(study, scan_id, recos[0]): # add option to exclude localizer during mass conversion
                             print('Identified a localizer, the file will not be converted: ScanID:{}'.format(str(scan_id)))
                         else:
@@ -296,6 +302,13 @@ def main():
                     sess_id = cleanSessionID(sess_id)
 
                     for scan_id, recos in pvobj.avail_reco_id.items():
+                        if scan_id not in pvobj._method:
+                            # Reconstruction data with no method file (e.g. an
+                            # adjustment/reference scan): can't be classified, so skip
+                            # it rather than KeyError on the method lookup below.
+                            warnings.warn('ScanID:[{}] has no method file; skipping.'
+                                          ''.format(scan_id))
+                            continue
                         for reco_id in recos:
                             visu_pars = dset.get_visu_pars(scan_id, reco_id)
                             if dset._get_dim_info(visu_pars)[1] == 'spatial_only':
@@ -458,34 +471,40 @@ def main():
                                 continue
                             temp_fname = '{}_{}'.format(row.FileName, row.modality)
                             if temp_fname not in list_tested_fn:
-                                # filter the DataFrame that has same filename (updated without run)
-                                fn_filter = filtered_dset.loc[:, 'FileName'].isin([row.FileName])
-                                fn_df = filtered_dset[fn_filter].reset_index(drop=True)
+                                try:
+                                    # filter the DataFrame that has same filename (updated without run)
+                                    fn_filter = filtered_dset.loc[:, 'FileName'].isin([row.FileName])
+                                    fn_df = filtered_dset[fn_filter].reset_index(drop=True)
 
-                                # filter specific modality from above DataFrame
-                                md_filter = fn_df.loc[:, 'modality'].isin([row.modality])
-                                md_df = fn_df[md_filter].reset_index(drop=True)
+                                    # filter specific modality from above DataFrame
+                                    md_filter = fn_df.loc[:, 'modality'].isin([row.modality])
+                                    md_df = fn_df[md_filter].reset_index(drop=True)
 
-                                if len(md_df) > 1:
-                                    conflict_tested = []
-                                    for j, sub_row in md_df.iterrows():
-                                        if pd.isnull(sub_row.run):
-                                            fname = '{}_run-{}'.format(sub_row.FileName, str(j+1).zfill(2))
-                                        else:
-                                            _ = bids_validation(df, i, 'run', sub_row.run, 3, dtype=int)
-                                            fname = '{}_run-{}'.format(sub_row.FileName, str(sub_row.run).zfill(2)) # [20210822] format error
-                                        if fname in conflict_tested:
-                                            raise ValueConflictInField('ScanID:[{}] Conflict error. '
-                                                                       'The [run] index value must be unique '
-                                                                       'among the scans with the same modality.'
-                                                                       ''.format(sub_row.ScanID))
-                                        else:
-                                            conflict_tested.append(fname)
-                                        build_bids_json(dset, sub_row, fname, json_fname, slope=slope, offset=offset)
-                                else:
-                                    fname = '{}'.format(row.FileName)
-                                    build_bids_json(dset, row, fname, json_fname, slope=slope, offset=offset)
-                                list_tested_fn.append(temp_fname)
+                                    if len(md_df) > 1:
+                                        conflict_tested = []
+                                        for j, sub_row in md_df.iterrows():
+                                            if pd.isnull(sub_row.run):
+                                                fname = '{}_run-{}'.format(sub_row.FileName, str(j+1).zfill(2))
+                                            else:
+                                                _ = bids_validation(df, i, 'run', sub_row.run, 3, dtype=int)
+                                                fname = '{}_run-{}'.format(sub_row.FileName, str(sub_row.run).zfill(2)) # [20210822] format error
+                                            if fname in conflict_tested:
+                                                raise ValueConflictInField('ScanID:[{}] Conflict error. '
+                                                                           'The [run] index value must be unique '
+                                                                           'among the scans with the same modality.'
+                                                                           ''.format(sub_row.ScanID))
+                                            else:
+                                                conflict_tested.append(fname)
+                                            build_bids_json(dset, sub_row, fname, json_fname, slope=slope, offset=offset)
+                                    else:
+                                        fname = '{}'.format(row.FileName)
+                                        build_bids_json(dset, row, fname, json_fname, slope=slope, offset=offset)
+                                    list_tested_fn.append(temp_fname)
+                                except Exception as e:
+                                    # One scan failing to convert must not abort the whole
+                                    # study's BIDS conversion (mirrors tonii_all's per-scan
+                                    # guard). Report it and move on to the next scan.
+                                    report_conversion_error(row.ScanID, row.RecoID, e)
 
                         # Record the participant only if at least one scan actually
                         # converted; otherwise participants.tsv would list a subject

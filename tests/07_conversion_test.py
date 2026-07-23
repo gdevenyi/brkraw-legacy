@@ -45,6 +45,22 @@ def test_multi_struct_array_with_parens_in_comment():
     assert parsed[1] == [6, 'FG_MOVIE', 'vtr', 2, 2]
 
 
+def test_api_parser_delegates_to_single_codepath():
+    """The api.pvobj parser must parse struct-array <...> comments identically to
+    the lib parser -- they are one codepath now. Regression: an FG_ISA relaxation
+    comment like <T2 relaxation: y=A+C*exp(-t/T2)> (parens/commas inside the
+    literal) used to corrupt VisuFGOrderDesc on the app.tonifti conversion path,
+    collapsing the group to ['-t/T2']."""
+    from brkraw_legacy.api.pvobj.parser import Parser
+    raw = ('(5, <FG_ISA>, <T2 relaxation: y=A+C*exp(-t/T2)>, 0, 2) '
+           '(6, <FG_MOVIE>, <vtr>, 2, 2)')
+    assert Parser.convert_data_to(raw, '( 2 )') == convert_data_to(raw, '( 2 )')
+    assert Parser.convert_data_to(raw, '( 2 )') == [
+        [5, 'FG_ISA', 'T2 relaxation: y=A+C*exp(-t/T2)', 0, 2],
+        [6, 'FG_MOVIE', 'vtr', 2, 2],
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # Frame-group parsing no longer crashes on single/complex-comment groups
 # --------------------------------------------------------------------------- #
@@ -56,6 +72,23 @@ def test_frame_group_info_parses_all_scans(h2_study):
             vp = d._get_visu_pars(sid, rid)
             fg = d._get_frame_group_info(vp)        # must not raise
             assert isinstance(fg['group_id'], list)
+
+
+def test_all_reconstructions_convert_through_app_tonifti(h2_study):
+    """Every reconstruction of 0.2H2 must either convert or be cleanly rejected as
+    non-image data through the app.tonifti path (``get_niftiobj``), matching the
+    loader-native path. Regression guard for derived ISA/DTI parametric maps
+    (scans 31/32/33 recos >=2) that used to crash only on the app.tonifti path."""
+    d = BrukerLoader(str(h2_study))
+    failures = []
+    for sid, recos in d.pvobj.avail_reco_id.items():
+        for rid in recos:
+            try:
+                d.get_niftiobj(sid, rid)
+            except Exception as e:                  # noqa: BLE001
+                if 'non-image data' not in str(e):
+                    failures.append((sid, rid, '{}: {}'.format(type(e).__name__, e)))
+    assert not failures, 'unexpected conversion failures: {}'.format(failures)
 
 
 # --------------------------------------------------------------------------- #
@@ -96,6 +129,21 @@ def test_spectroscopic_rejected_cleanly(h2_study):
         pytest.skip('no spectroscopic scan in sample')
     with pytest.raises(Exception, match='non-image data'):
         d.get_niftiobj(*target)
+
+
+def test_empty_reconstruction_rejected_cleanly():
+    """A reconstruction whose visu_pars is empty/unreadable parses to a raw line
+    list (not a Parameter) and carries no image metadata -- e.g. an empty
+    reconstruction whose pdata files are all zero bytes. It must be rejected with
+    a clear message, not crash with 'list indices must be integers' inside the
+    DataArray helper."""
+    import types
+
+    from brkraw_legacy.api.helper.dataarray import DataArray
+
+    fake = types.SimpleNamespace(visu_pars=[''])   # what an empty visu_pars parses to
+    with pytest.raises(ValueError, match='no image metadata'):
+        DataArray(fake)
 
 
 def test_stub_2dseq_rejected_cleanly():
