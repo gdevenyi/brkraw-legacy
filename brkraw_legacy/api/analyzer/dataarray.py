@@ -67,6 +67,13 @@ class DataArrayAnalyzer(BaseAnalyzer):
         left open for the garbage collector. The returned array keeps the read
         bytes, not the file handle, so it stays valid after the close.
         """
+        if not hasattr(self.buffer, 'read'):
+            # A stub or unreadable 2dseq (e.g. an unpulled git-LFS pointer) is a
+            # small text file, so it parses to a line list rather than a binary
+            # file object. There is no image data to read -- reject it clearly
+            # instead of crashing on ``with <list>``.
+            raise ValueError('2dseq is not a readable image file (stub or '
+                             'unreadable); cannot convert to NIfTI')
         with self.buffer as buffer:
             buffer.seek(0)
             raw = buffer.read()
