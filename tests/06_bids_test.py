@@ -473,3 +473,26 @@ def test_multislicepack_uses_chunk_entity(h2_study, tmp_path):
         if '_magnitude' not in p.name:   # magnitude needs no sidecar
             assert p.with_name(p.name.replace('.nii.gz', '.json')).exists(), \
                 'orphaned/missing sidecar for {}'.format(p.name)
+
+
+def test_dwi_bval_tiled_to_volume_count(h2_study, tmp_path):
+    """A multi-cycle/repetition DWI keeps every repeat as a separate volume; the
+    per-direction bval/bvec must be tiled to one entry per volume (else BIDS
+    VOLUME_COUNT_MISMATCH). The diffusion block repeats per cycle, so the tile is
+    block-wise, not element-wise."""
+    import numpy as np
+
+    from brkraw_legacy import BrukerLoader
+
+    d = BrukerLoader(str(h2_study))
+    scan = next((s for s in d.pvobj.avail_scan_id
+                 if s in d._pvobj._method
+                 and 'PVM_DwEffBval' in d.get_method(s).parameters), None)
+    if scan is None:
+        pytest.skip('no diffusion scan in sample')
+    bvals0, _ = d._get_bdata(d._method[scan])
+    n = len(np.atleast_1d(bvals0))
+    d.save_bdata(scan, 'sc', dir=str(tmp_path), reco_id=1, num_volumes=3 * n)
+    bval = tmp_path.joinpath('sc.bval').read_text().split()
+    assert len(bval) == 3 * n
+    assert bval[:n] == bval[n:2 * n] == bval[2 * n:3 * n]   # block-tiled, not repeated

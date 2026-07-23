@@ -489,8 +489,10 @@ def build_bids_json(dset, row, fname, json_path, slope=False, offset=False, inte
                 current = '{}_{}'.format(fname, row.modality)
             nii.to_filename(os.path.join(row.Dir, '{}.nii.gz'.format(current)))
             if re.search('dwi', row.modality, re.IGNORECASE):
-                # DTI parameter (FSL style)
-                dset.save_bdata(row.ScanID, current, dir=row.Dir, reco_id=row.RecoID)
+                # DTI parameter (FSL style); one bval/bvec per written volume
+                nvol = nii.shape[3] if nii.ndim >= 4 else 1
+                dset.save_bdata(row.ScanID, current, dir=row.Dir, reco_id=row.RecoID,
+                                num_volumes=nvol)
             # magnitude data does not require JSON (BIDS)
             if json_path and not re.search('magnitude', row.modality, re.IGNORECASE):
                 ref = get_bids_ref_obj(json_path, row)
