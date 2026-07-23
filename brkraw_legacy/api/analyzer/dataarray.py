@@ -51,7 +51,12 @@ class DataArrayAnalyzer(BaseAnalyzer):
         self.dtype = infoobj.dataarray['dtype']
         self.shape = infoobj.image['shape'][:]
         self.shape_desc = infoobj.image['dim_desc'][:]
-        if infoobj.frame_group and infoobj.frame_group['type']:
+        # Extend the spatial shape by the frame-group dimensions whenever frame
+        # groups are present. Gate on the parsed frame shape, not VisuCoreFrameType:
+        # derived reconstructions (ISA parametric maps, DTI tensor images) carry a
+        # valid multi-frame VisuFGOrderDesc but no VisuCoreFrameType, and must still
+        # be reshaped to include their frame axes.
+        if infoobj.frame_group and infoobj.frame_group.get('shape'):
             self._calc_array_shape(infoobj)
             
     def _calc_array_shape(self, infoobj: 'ScanInfo'):
