@@ -180,6 +180,27 @@ def test_end_to_end_passes_validator(lego_study, tmp_path):
         [(e.get('code'), e.get('subCode')) for e in errors])
 
 
+def test_software_versions_sidecar_is_string(lego_study, tmp_path):
+    """SoftwareVersions is a string in the BIDS schema, but Bruker version fields
+    like <6.0> parse to a float; save_json must write it as a string. We source
+    it from a numeric param (the sample's own VisuAcqSoftwareVersion is absent) to
+    exercise the coercion."""
+    import json
+
+    from brkraw_legacy import BrukerLoader
+
+    d = BrukerLoader(str(lego_study))
+    for sid in d.pvobj.avail_scan_id:
+        d.save_json(sid, 1, 'sc', dir=str(tmp_path),
+                    metadata={'SoftwareVersions': 'VisuAcqRepetitionTime'})
+        obj = json.loads((tmp_path / 'sc.json').read_text())
+        if 'SoftwareVersions' in obj:
+            assert isinstance(obj['SoftwareVersions'], str), \
+                'SoftwareVersions must be a string, got {!r}'.format(obj['SoftwareVersions'])
+            return
+    pytest.skip('no scan with a numeric VisuAcqRepetitionTime to coerce')
+
+
 def test_asl_scans_not_auto_classified(lego_study, tmp_path):
     """FAIR/CASL/perfusion scans must not be auto-classified as bold or anat (BIDS
     perf/asl is unsupported here); the helper leaves them as 'etc' for the user."""
