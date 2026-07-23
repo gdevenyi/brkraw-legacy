@@ -79,6 +79,24 @@ def test_label_validation():
     assert not bids.is_valid_label('a-b')
 
 
+def test_subject_session_id_sanitized_to_valid_bids_label():
+    """A subject/session ID must become an alphanumeric BIDS label. Regression:
+    a version-derived id like PV360's ``std_PV360_3.7`` kept its '.', which is
+    invalid in a sub-<label> and made the whole subject tree unrecognizable."""
+    import re
+    import warnings
+
+    from brkraw_legacy.scripts.brkraw_legacy import cleanSessionID, cleanSubjectID
+
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        assert cleanSubjectID('std_PV360_3.7') == 'stdUnderscorePV360Underscore37'
+        assert cleanSessionID('1.2') == '12'
+        assert cleanSubjectID('clean123') == 'clean123'   # unchanged
+        for raw in ('a.b', 'x_3.7', 'p 1', 'v/2'):
+            assert re.fullmatch(r'[a-zA-Z0-9]+', cleanSubjectID(raw)), raw
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end: convert a public dataset and validate it
 # --------------------------------------------------------------------------- #

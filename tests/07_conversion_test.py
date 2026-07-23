@@ -146,6 +146,25 @@ def test_empty_reconstruction_rejected_cleanly():
         DataArray(fake)
 
 
+def test_stub_2dseq_rejected_cleanly():
+    """A stub/unreadable 2dseq (e.g. an unpulled git-LFS pointer) is a small text
+    file, so it parses to a line list rather than a binary file object. It must be
+    rejected with a clear message, not crash with "'list' object does not support
+    the context manager protocol"."""
+    import types
+
+    from brkraw_legacy.api.analyzer.dataarray import DataArrayAnalyzer
+
+    info = types.SimpleNamespace(
+        dataarray={'slope': 1, 'offset': 0, 'dtype': '<i2'},
+        image={'shape': [4, 4], 'dim_desc': ['spatial', 'spatial']},
+        frame_group=None)
+    ana = DataArrayAnalyzer(info, ['version https://git-lfs.github.com/spec/v1',
+                                   'oid sha256:deadbeef'])   # stub -> line list
+    with pytest.raises(ValueError, match='2dseq'):
+        ana.get_dataarray()
+
+
 # --------------------------------------------------------------------------- #
 # Loose-scan collection (no subject file) loads without a TypeError
 # --------------------------------------------------------------------------- #
