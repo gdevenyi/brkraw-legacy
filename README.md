@@ -19,7 +19,6 @@ installed side by side:
 | Distribution   | `brkraw`        | `brkraw-legacy`     |
 | Import package | `brkraw`        | `brkraw_legacy`     |
 | Conversion CLI | `brkraw`        | `brkraw-legacy`     |
-| Archiving CLI  | `brk-legacy-backup`    | `brk-legacy-backup` |
 
 Please report issues with this fork to
 [gdevenyi/brkraw-legacy](https://github.com/gdevenyi/brkraw-legacy/issues), not to upstream.
@@ -31,7 +30,7 @@ Bruker Biospin preclinical MRI scanner. This module is also compatible with the 
 to enable use of the archived data directly.  
 The module is comprised of three components, including command-line tools,
 high-level and low-level python APIs.
-- For the command-line tool, we focused on providing tools for converting, organizing, archiving, and managing data.
+- For the command-line tool, we focused on providing tools for converting, organizing, and managing data.
 The command-line tool also provides easy-to-use function to convert large set of raw data into organized structure
 according to [BIDS](https://bids.neuroimaging.io).
 - For the high-level python API, we focused on enhancing the accessibility of reconstructed image data with 
@@ -63,8 +62,7 @@ uv sync                       # runtime deps, editable install
 uv sync --extra dev           # test/lint tooling (pytest, ruff, bids-validator)
 ```
 
-Two command-line tools are installed: **`brkraw-legacy`** (inspection/conversion) and
-**`brk-legacy-backup`** (archive management).
+One command-line tool is installed: **`brkraw-legacy`** (inspection/conversion).
 
 ---
 
@@ -129,18 +127,6 @@ The output is validator-clean: correct filenames/entity ordering, JSON sidecars 
 `participants.tsv`/`.json`, `README`, `CHANGES`, and a `.bidsignore`. Validate with the
 official [bids-validator](https://github.com/bids-standard/bids-validator). Spectroscopic and
 unclassifiable scans are skipped rather than written as invalid datatypes.
-
-### Archive management — `brk-legacy-backup`
-Track and archive raw datasets against a backup location.
-
-```bash
-brk-legacy-backup archived <raw_path> <archived_path>   # report archive status
-brk-legacy-backup review   <raw_path> <archived_path>   # show conflicts before archiving
-brk-legacy-backup backup   <raw_path> <archived_path>   # archive raw data (run after review)
-brk-legacy-backup clean    <raw_path> <archived_path>   # remove problematic archives
-```
-
-Add `-l/--logging` to write a log file.
 
 ---
 
