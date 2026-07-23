@@ -47,6 +47,42 @@ Public datasets pulled locally to develop or verify a change; not part of CI.
 > `new-orientation/` (CIC phantom / plantest studies) — are intentionally omitted:
 > they have no public source.
 
+### Raw ParaVision datasets from Zenodo (conversion-sweep coverage)
+
+Public **raw** Bruker/ParaVision datasets found by querying the
+[Zenodo REST API](https://developers.zenodo.org/) for ParaVision / preclinical-MRI
+raw data (filtering out the far more numerous Bruker NMR, crystallography and
+mass-spec records, and the many "Bruker MRI" records that only ship *derived*
+NIfTI/MINC). Downloaded under the git-ignored `resources/testdata/zenodo/<slug>/`
+and run through the full NIfTI + BIDS conversion sweep (`tools/sweep_nifti.py`,
+`tools/sweep_bids.py`). Together they extend coverage to mouse/rat/**lemur**,
+fields from 7T to 9.4T, PV5.1/6.0/6.0.1/7.0.0, and acquisition types (opto-fMRI,
+multishell DWI, DCE, CSI, quantitative T2/DTI maps) well beyond the phantom
+fixtures. The sweep surfaced several conversion bugs, each fixed in its own PR.
+
+| Dataset | ParaVision | Source (Zenodo) | License | Conversion notes |
+|---|---|---|---|---|
+| SAMRI test data | PV6.0 | [3823441](https://zenodo.org/records/3823441) (`samri_bindata-0.4.tar.xz`, 2.3 GB) | CC-BY-4.0 | Mouse, rat & **lemur**; BOLD / seEPI / geEPI / TurboRARE. 45 image scans, all convert. Surfaced the `SoftwareVersions` sidecar-schema flag (fixed in #42). |
+| DHMC opto-fMRI | PV6.0.1 | [13688071](https://zenodo.org/records/13688071) (`dhmcps_brudata-0.1.tar.xz`, 385 MB) | CC-BY-4.0 | Explicit "raw Bruker ParaVision" opto-fMRI pilot; ~20 sessions (phantoms + FC000x). 180 scans, all convert cleanly. |
+| Optic-pathway dMRI | PV6.0.1 | [8120834](https://zenodo.org/records/8120834) (`mouse02`+`mouse09.tar.gz`, 2 of 18 mice) | not stated | 7T multishell DWI EPI (60-dir, b∈{250,1000,2250,4000}) + 100µm FLASH T1. Surfaced the method-less-scan `bids_helper` KeyError (`mouse09/followup` scan 4, fixed in #39). |
+| Rat stroke T2 (SAHA) | PV5.1 (7T) | [20933774](https://zenodo.org/records/20933774) (zip, 1.6 GB) | CC-BY-4.0 | 24 SHR-rat sessions, quantitative T2. Raw T2 (reco 1) converts; the 24 derived T2 maps (reco 2) surfaced the `FG_ISA` derived-recon parser bug (fixed in #37). |
+| DCE-MRI FUS BBB | PV7.0.0 (9.4T) | [13683103](https://zenodo.org/records/13683103) (`ISIBrno_FUS_DCEMRI_v2.zip`, 4.1 GB) | CC-BY-4.0 | 3D FLASH GASOS DCE + IRLL, 11 mouse studies (63 scans). All convert cleanly. |
+| HP ¹³C static CSI | PV7.0.0 (7T) | [20429962](https://zenodo.org/records/20429962) (zip, 29 MB) | CC-BY-4.0 | Hyperpolarized ¹³C-pyruvate mouse abdomen. Image scans convert; CSI spectroscopic frames cleanly rejected (no crash). |
+| Operando thermocell | PV6-era | [5565584](https://zenodo.org/records/5565584) (zip, 260 MB) | CC-BY-4.0 | Electrochemical-cell MRI (temperature/redox maps), 939 scans, 934 convert. 5 empty reconstructions (all-zero-byte pdata) surfaced the `visu_pars`-is-list crash (fixed in #40). |
+
+> **Searched but not raw ParaVision (excluded):** several large "Bruker + MRI"
+> Zenodo hits ship **derived** NIfTI/MINC, not raw studies — e.g. the forepaw
+> 14.1T electrostimulation dataset ([14793797](https://zenodo.org/records/14793797):
+> BIDS `*_bold`/`*_dwi` NIfTI with `.bval`/`.bvec`, no `2dseq`), Alvino/Gini
+> rs-fMRI mouse ([14534419](https://zenodo.org/records/14534419) /
+> [14534751](https://zenodo.org/records/14534751), 80 GB), and the
+> Mouse-Imaging-Centre `.mnc` records. The `MRSI-semiLASER`
+> ([18461488](https://zenodo.org/records/18461488)) data is spectroscopic
+> (non-image). The BrukerAPI records
+> ([4048286](https://zenodo.org/records/4048286) /
+> [4048253](https://zenodo.org/records/4048253) /
+> [4522220](https://zenodo.org/records/4522220)) are already the CI fixtures listed above.
+
 ## Candidate datasets (found in the PCI-Community forum; not yet used)
 
 From [pci-community.com](https://pci-community.com/) (Bruker Preclinical Imaging
