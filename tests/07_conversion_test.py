@@ -98,6 +98,21 @@ def test_spectroscopic_rejected_cleanly(h2_study):
         d.get_niftiobj(*target)
 
 
+def test_empty_reconstruction_rejected_cleanly():
+    """A reconstruction whose visu_pars is empty/unreadable parses to a raw line
+    list (not a Parameter) and carries no image metadata -- e.g. an empty
+    reconstruction whose pdata files are all zero bytes. It must be rejected with
+    a clear message, not crash with 'list indices must be integers' inside the
+    DataArray helper."""
+    import types
+
+    from brkraw_legacy.api.helper.dataarray import DataArray
+
+    fake = types.SimpleNamespace(visu_pars=[''])   # what an empty visu_pars parses to
+    with pytest.raises(ValueError, match='no image metadata'):
+        DataArray(fake)
+
+
 # --------------------------------------------------------------------------- #
 # Loose-scan collection (no subject file) loads without a TypeError
 # --------------------------------------------------------------------------- #

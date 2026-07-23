@@ -19,7 +19,15 @@ class DataArray(BaseHelper):
     def __init__(self, analobj: 'ScanInfoAnalyzer'):
         super().__init__()
         visu_pars = analobj.visu_pars
-        
+
+        # An empty or unreadable visu_pars parses to a raw line list (not a
+        # Parameter), e.g. an empty reconstruction whose pdata files are all
+        # zero bytes. It carries no image metadata, so reject it with a clear
+        # message instead of crashing on ``list["VisuCoreByteOrder"]``.
+        if not hasattr(visu_pars, 'keys') or 'VisuCoreByteOrder' not in visu_pars.keys():
+            raise ValueError('reconstruction has no image metadata (empty or '
+                             'unreadable visu_pars); cannot convert to NIfTI')
+
         byte_order = visu_pars["VisuCoreByteOrder"]
         word_type = visu_pars["VisuCoreWordType"]
         self.data_dtype = np.dtype(f'{BYTEORDER[byte_order]}{WORDTYPE[word_type]}')
