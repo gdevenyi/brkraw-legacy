@@ -36,8 +36,7 @@ The command-line tool also provides easy-to-use function to convert large set of
 according to [BIDS](https://bids.neuroimaging.io).
 - For the high-level python API, we focused on enhancing the accessibility of reconstructed image data with 
 preserved image orientation and metadata for the image analysis. 
-It compatible users' convenient objects type ([nibabel](https://nipy.org/nibabel/) or 
-[SimpleITK](https://simpleitk.readthedocs.io/en/master/gettingStarted.html#python-binary-files)) 
+It compatible users' convenient objects type ([nibabel](https://nipy.org/nibabel/)) 
 without the conversion step. 
 - For the low-level python API, we focused on providing a consistent method to access raw Bruker data including 
 parameter and binary files with the python compatible datatype while keeping the sake of simplicity.
@@ -53,9 +52,6 @@ Requires Python >= 3.11.
 
 ```bash
 pip install git+https://github.com/gdevenyi/brkraw-legacy.git
-
-# optional SimpleITK support (get_sitkimg / ITK-compatible output)
-pip install "brkraw-legacy[simpleitk] @ git+https://github.com/gdevenyi/brkraw-legacy.git"
 ```
 
 From source (development), using [uv](https://docs.astral.sh/uv/):
@@ -64,7 +60,6 @@ From source (development), using [uv](https://docs.astral.sh/uv/):
 git clone https://github.com/gdevenyi/brkraw-legacy.git
 cd brkraw-legacy
 uv sync                       # runtime deps, editable install
-uv sync --extra simpleitk     # also install SimpleITK
 uv sync --extra dev           # test/lint tooling (pytest, ruff, bids-validator)
 ```
 
@@ -177,9 +172,6 @@ study.save_as(2, 1, 'output_name')
 # raw ndarray and 4x4 affine
 data   = study.get_dataobj(2, 1)
 affine = study.get_affine(2, 1)
-
-# SimpleITK image (requires the 'simpleitk' extra)
-img = study.get_sitkimg(2, 1)
 ```
 Multi-slice-package or multi-echo scans return a **list** of images; `save_nifti` writes
 them as `name-01.nii.gz`, `name-02.nii.gz`, ....

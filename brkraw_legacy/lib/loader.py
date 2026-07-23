@@ -3,7 +3,6 @@ from .subject_orient import SUBJECT_POSE, SUBJECT_TYPES, normalize_subject_type
 from .pvobj import PvDatasetDir, PvDatasetZip
 from functools import reduce
 from .utils import get_value, is_all_element_same, multiply_all, encdir_code_converter, meta_get_value
-from nibabel.affines import to_matvec
 from .reference import ERROR_MESSAGES, ISSUE_REPORT, COMMON_META_REF
 import numpy as np
 import zipfile
@@ -417,69 +416,6 @@ class BrukerLoader():
                     for o in objs]
             niiobj = objs if isinstance(niiobj, list) else objs[0]
         return niiobj
-
-    def get_sitkimg(self, scan_id, reco_id, slope=True, offset=True, is_vector=False):
-        """ return SimpleITK image obejct instead Nibabel NIFTI obj"""
-        try:
-            import SimpleITK as sitk
-        except ModuleNotFoundError:
-            raise ModuleNotFoundError('The BrkRaw did not be installed with SimpleITK (optional requirement).\n'
-                                      '\t\t\t\t\t Please install SimpleITK to activate this method.')
-
-        visu_pars = self._get_visu_pars(scan_id, reco_id)
-        method = self._method[scan_id]
-        res = self._get_spatial_info(visu_pars)['spatial_resol']
-        dataobj = self.get_dataobj(scan_id, reco_id, slope=slope, offset=offset)
-        affine = self.get_affine(scan_id, reco_id)
-
-        if isinstance(affine, list):
-            parser = []
-            slice_info = self._get_slice_info(visu_pars)
-            num_slice_packs = slice_info['num_slice_packs']
-            for spack_idx in range(num_slice_packs):
-                num_slices_each_pack = slice_info['num_slices_each_pack']
-                start = int(spack_idx * num_slices_each_pack[spack_idx])
-                end = start + num_slices_each_pack[spack_idx]
-                seg_imgobj = dataobj[..., start:end]
-                sitkobj = sitk.GetImageFromArray(seg_imgobj.T)
-                sitkaff = np.matmul(np.diag([-1, -1, 1, 1]), affine[spack_idx])
-                sitkdir, sitkorg = to_matvec(sitkaff)
-                sitkdir = sitkdir.dot(np.linalg.inv(np.diag(res[spack_idx])))
-                sitkobj.SetDirection(sitkdir.flatten().tolist())
-                sitkobj.SetOrigin(sitkorg)
-                sitkobj.SetSpacing(res[spack_idx])
-                parser.append(sitkobj)
-            return parser
-
-        affine = np.matmul(np.diag([-1, -1, 1, 1]), affine)  # RAS to LPS
-        direction_, origin_ = to_matvec(affine)
-        direction_ = direction_.dot(np.linalg.inv(np.diag(res[0])))
-        imgobj = sitk.GetImageFromArray(dataobj.T, isVector=is_vector)
-
-        if len(dataobj.shape) > 3:
-            res = [list(res[0]) + [self._get_temp_info(visu_pars)['temporal_resol']]]
-            direction = np.eye(4)
-            direction[:3, :3] = direction_
-            direction = direction.flatten()
-            origin = np.zeros([4])
-            origin[:3] = origin_
-        else:
-            direction = direction_
-            origin = origin_
-        imgobj.SetDirection(direction.flatten().tolist())
-        imgobj.SetOrigin(origin)
-        imgobj.SetSpacing(res[0])
-        # header update
-        imgobj = self._set_dicom_header(imgobj, visu_pars, method, slope, offset)
-        return imgobj
-
-    def _set_dicom_header(self, sitk_img, visu_pars, method, slope, offset):
-        """ TODO: need to update sitk header (DICOM format) """
-        return sitk_img
-
-    def save_sitk(self, io_type=None):
-        """ TODO: mha, nrrd format with header """
-        pass
 
     @property
     def save_as(self):

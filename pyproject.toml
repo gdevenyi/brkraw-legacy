@@ -49,10 +49,6 @@ Repository = "https://github.com/gdevenyi/brkraw-legacy"
 Issues = "https://github.com/gdevenyi/brkraw-legacy/issues"
 
 [project.optional-dependencies]
-simpleitk = [
-    'SimpleITK>=2.2.1',
-]
-
 dev = [
     "ruff>=0.11.0",
     "pytest",

@@ -13,7 +13,6 @@ This is a hard fork of the upstream [BrkRaw](https://github.com/BrkRaw/brkraw) 0
 ```bash
 uv sync                       # Runtime deps only (editable install)
 uv sync --extra dev           # Also install pytest/ruff/bids-validator (needed to run tests)
-uv sync --extra simpleitk     # Also include SimpleITK
 
 # Testing
 uv run pytest                       # All tests (sample data auto-fetched from the network)
