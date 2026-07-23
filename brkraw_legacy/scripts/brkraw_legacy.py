@@ -373,7 +373,13 @@ def main():
                                         item['modality'] = 'dwi'
                                         df = pd.concat([df, pd.DataFrame([item])], ignore_index=True)
                                     elif datatype == 'anat' and re.search('MSME', method, re.IGNORECASE):
-                                        item['modality'] = 'MESE'
+                                        # MSME is multi-slice multi-echo, but only a
+                                        # genuinely multi-echo reconstruction is a BIDS
+                                        # MESE (which requires an echo- entity). A
+                                        # single-echo MSME is just a T2-weighted image.
+                                        item['modality'] = ('MESE'
+                                                            if dset.is_multi_echo(scan_id, reco_id)
+                                                            else 'T2w')
                                         df = pd.concat([df, pd.DataFrame([item])], ignore_index=True)
                                     else:
                                         df = pd.concat([df, pd.DataFrame([item])], ignore_index=True)
