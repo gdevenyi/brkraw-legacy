@@ -395,3 +395,31 @@ def test_multiecho_gets_echo_entity(lego_study, tmp_path):
     build_bids_json(d, row, 'sub-001', None)
     niis = sorted(p.name for p in tmp_path.glob('*.nii.gz'))
     assert niis == ['sub-001_echo-{}_T2starw.nii.gz'.format(i + 1) for i in range(n_echo)]
+
+
+def test_derived_reconstructions_not_auto_classified(h2_study, tmp_path):
+    """ISA parametric maps and generated DTI tensor images are BIDS derivatives;
+    bids_helper must leave them 'etc', not label them anat/MESE or dwi -- which
+    produced a single-frame "MESE" with no echo-/EchoTime and a "dwi" whose
+    bval/bvec length did not match the volumes."""
+    import pandas as pd
+
+    from brkraw_legacy import BrukerLoader
+
+    sample = tmp_path / 'sample'
+    sample.mkdir()
+    (sample / h2_study.name).symlink_to(h2_study.resolve())
+    sheet = tmp_path / 'map'
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(sample), str(sheet)])
+    df = pd.read_csv(str(sheet) + '.csv')
+
+    d = BrukerLoader(str(h2_study))
+    n_derived = 0
+    for _, row in df.iterrows():
+        gid = d._get_frame_group_info(
+            d._get_visu_pars(int(row.ScanID), int(row.RecoID)))['group_id']
+        if any(g in ('FG_ISA', 'FG_DTI') for g in gid):
+            n_derived += 1
+            assert row.DataType == 'etc', \
+                'derived reco {}/{} classified as {}'.format(row.ScanID, row.RecoID, row.DataType)
+    assert n_derived, 'expected at least one derived (FG_ISA/FG_DTI) reconstruction'
