@@ -166,6 +166,30 @@ def test_end_to_end_bids_convert(lego_study, tmp_path):
         assert 'Visu' not in text                       # echoed Bruker param name
 
 
+def test_phase_encoding_direction_is_bids_axis(h2_study, tmp_path):
+    """Every emitted PhaseEncodingDirection must be a BIDS axis (i/j/k[-]), not a
+    raw Bruker code. Regression: PV5.1's uniform ``VisuAcqImagePhaseEncDir`` of
+    ``col_dir`` reached the sidecar verbatim (schema-invalid)."""
+    valid = {'i', 'i-', 'j', 'j-', 'k', 'k-'}
+    sample = tmp_path / 'sample'
+    sample.mkdir()
+    (sample / h2_study.name).symlink_to(h2_study.resolve())
+    sheet = tmp_path / 'map'
+    out = tmp_path / 'out'
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(sample), str(sheet), '-j'])
+    subprocess.check_call(['brkraw-legacy', 'bids_convert', str(sample),
+                           str(sheet) + '.csv', '-j', str(sheet) + '.json',
+                           '--output', str(out)])
+    seen = 0
+    for js in out.rglob('*.json'):
+        pe = json.loads(js.read_text()).get('PhaseEncodingDirection')
+        if pe is not None:
+            assert pe in valid, '{}: {!r}'.format(js.name, pe)
+            seen += 1
+    if not seen:
+        pytest.skip('no PhaseEncodingDirection emitted in this sample')
+
+
 @pytest.mark.skipif(_validator_bin() is None, reason='bids-validator (deno) not available')
 def test_end_to_end_passes_validator(lego_study, tmp_path):
     out = _prepare_anat_dataset(lego_study, tmp_path)

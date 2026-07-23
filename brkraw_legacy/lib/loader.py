@@ -584,7 +584,17 @@ class BrukerLoader():
                     else:
                         if isinstance(val, list):
                             if is_all_element_same(val):
-                                val = val[0]
+                                # A uniform per-slice direction: reduce to the single
+                                # value and convert it like the scalar case below, so a
+                                # PV5.1 string code ('col_dir'/'row_dir') becomes a BIDS
+                                # axis instead of reaching the sidecar verbatim.
+                                v = val[0]
+                                if isinstance(v, int):
+                                    val = encdir_dic[v]
+                                else:
+                                    encdirs = encdir_code_converter(v)
+                                    val = (encdir_dic[encdirs.index('phase_enc')]
+                                           if 'phase_enc' in encdirs else None)
                             else:
                                 # handling condition of multiple phase encoding direction
                                 updated_val = []
