@@ -180,6 +180,131 @@ def test_end_to_end_passes_validator(lego_study, tmp_path):
         [(e.get('code'), e.get('subCode')) for e in errors])
 
 
+def test_bids_convert_isolates_failing_scan(h2_study, tmp_path):
+    """A scan that raises during conversion must be reported and skipped, not
+    abort the whole study's BIDS conversion (mirrors tonii_all's per-scan guard).
+    We classify a genuinely-crashing reconstruction as anat alongside a
+    convertible 3D scan; the good scan must still be written and bids_convert
+    must exit cleanly. Skips when no crashing reconstruction exists.
+    """
+    import pandas as pd
+
+    from brkraw_legacy import BrukerLoader
+
+    d = BrukerLoader(str(h2_study))
+    # A reco that crashes (not a clean 'non-image data' skip, which save_as handles).
+    crash = None
+    for sid, recos in d.pvobj.avail_reco_id.items():
+        for rid in recos:
+            try:
+                d.get_niftiobj(sid, rid)
+            except Exception as e:                      # noqa: BLE001
+                if 'non-image data' not in str(e):
+                    crash = (int(sid), int(rid))
+                    break
+        if crash:
+            break
+    if crash is None:
+        pytest.skip('no genuinely-crashing reconstruction to isolate')
+
+    good = None
+    for sid in d.pvobj.avail_scan_id:
+        if sid == crash[0]:
+            continue
+        try:
+            obj = d.get_niftiobj(sid, 1)
+        except Exception:                               # noqa: BLE001
+            continue
+        if not isinstance(obj, list) and getattr(obj, 'ndim', 0) == 3:
+            good = int(sid)
+            break
+    if good is None:
+        pytest.skip('no convertible 3D scan available')
+
+    sample = tmp_path / 'sample'
+    sample.mkdir()
+    (sample / h2_study.name).symlink_to(h2_study.resolve())
+    sheet = tmp_path / 'map'
+    out = tmp_path / 'raw'
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(sample), str(sheet), '-j'])
+    df = pd.read_csv(str(sheet) + '.csv')
+    keep = df[((df['ScanID'] == crash[0]) & (df['RecoID'] == crash[1]))
+              | ((df['ScanID'] == good) & (df['RecoID'] == 1))].copy()
+    keep['SubjID'] = '001'
+    keep['SessID'] = ''
+    keep['DataType'] = 'anat'
+    keep['modality'] = 'T2starw'
+    keep['acq'] = ['scan{}'.format(i) for i in range(len(keep))]
+    keep.to_csv(str(sheet) + '.csv', index=False)
+
+    # Must not raise: the crashing scan is reported and skipped, not fatal.
+    subprocess.check_call(['brkraw-legacy', 'bids_convert', str(sample),
+                           str(sheet) + '.csv', '-j', str(sheet) + '.json',
+                           '--output', str(out)])
+    assert list(out.rglob('sub-001/anat/*_T2starw.nii.gz')), \
+        'the convertible scan should still produce output'
+
+
+def test_method_less_scan_does_not_crash(h2_study, tmp_path):
+    """A scan carrying reconstruction data but no method file (e.g. an
+    adjustment/reference scan) must be skipped with a warning, not crash
+    bids_helper / tonii_all with a KeyError on the method lookup."""
+    import shutil
+
+    import pandas as pd
+
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.scripts.brkraw_legacy import is_localizer
+
+    d = BrukerLoader(str(h2_study))
+
+    def _scan_size(s):
+        return sum(p.stat().st_size for p in (h2_study / str(s)).rglob('*') if p.is_file())
+
+    def _listable(s):
+        # a scan bids_helper would classify (image, non-localizer) -- i.e. one that
+        # reaches the get_method() call the method-less guard protects
+        if not (h2_study / str(s) / 'method').is_file():
+            return False
+        try:
+            vp = d._get_visu_pars(s, 1)
+            return d._get_dim_info(vp)[1] == 'spatial_only' and not is_localizer(d, s, 1)
+        except Exception:
+            return False
+
+    scans = sorted((s for s in d.pvobj.avail_scan_id if _listable(s)), key=_scan_size)
+    if len(scans) < 2:
+        pytest.skip('need two classifiable image scans with method files')
+    full, methodless = scans[0], scans[1]
+
+    study = tmp_path / 'study'
+    study.mkdir()
+    shutil.copy2(h2_study / 'subject', study / 'subject')
+    shutil.copytree(h2_study / str(full), study / str(full))
+    shutil.copytree(h2_study / str(methodless), study / str(methodless))
+    (study / str(methodless) / 'method').unlink()   # scan now has no method file
+
+    # sanity: the scan is registered (has reco data) but has no method entry
+    d2 = BrukerLoader(str(study))
+    assert methodless in d2.pvobj.avail_scan_id
+    assert methodless not in d2.pvobj._method
+
+    parent = tmp_path / 'parent'
+    parent.mkdir()
+    (parent / 'study').symlink_to(study.resolve())
+    sheet = tmp_path / 'map'
+
+    # bids_helper must not raise; the method-less scan is skipped.
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(parent), str(sheet)])
+    listed = set(pd.read_csv(str(sheet) + '.csv')['ScanID'])
+    assert methodless not in listed
+    assert full in listed
+
+    # tonii_all must not raise either.
+    subprocess.check_call(['brkraw-legacy', 'tonii_all', str(parent),
+                           '--output', str(tmp_path / 'nii')])
+
+
 def test_asl_scans_not_auto_classified(lego_study, tmp_path):
     """FAIR/CASL/perfusion scans must not be auto-classified as bold or anat (BIDS
     perf/asl is unsupported here); the helper leaves them as 'etc' for the user."""
