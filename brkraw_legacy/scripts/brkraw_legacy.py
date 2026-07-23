@@ -204,6 +204,12 @@ def main():
                     sess_path = os.path.join(subj_path, 'ses-{}'.format(study._pvobj.study_id))
                     mkdir(sess_path)
                     for scan_id, recos in study._pvobj.avail_reco_id.items():
+                        if scan_id not in study._pvobj._method:
+                            # A scan can carry reconstruction data (2dseq) without a
+                            # method file (e.g. an adjustment/reference scan). Skip it
+                            # rather than KeyError on the method lookup below.
+                            print('ScanID:{} has no method file; skipping.'.format(scan_id))
+                            continue
                         if ignore_localizer and is_localizer(study, scan_id, recos[0]): # add option to exclude localizer during mass conversion
                             print('Identified a localizer, the file will not be converted: ScanID:{}'.format(str(scan_id)))
                         else:
@@ -296,6 +302,13 @@ def main():
                     sess_id = cleanSessionID(sess_id)
 
                     for scan_id, recos in pvobj.avail_reco_id.items():
+                        if scan_id not in pvobj._method:
+                            # Reconstruction data with no method file (e.g. an
+                            # adjustment/reference scan): can't be classified, so skip
+                            # it rather than KeyError on the method lookup below.
+                            warnings.warn('ScanID:[{}] has no method file; skipping.'
+                                          ''.format(scan_id))
+                            continue
                         for reco_id in recos:
                             visu_pars = dset.get_visu_pars(scan_id, reco_id)
                             if dset._get_dim_info(visu_pars)[1] == 'spatial_only':
