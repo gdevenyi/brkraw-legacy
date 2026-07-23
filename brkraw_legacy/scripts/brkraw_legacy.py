@@ -318,11 +318,27 @@ def main():
 
                                     datatype = assignDataType(method)
 
+                                    # Derived/computed reconstructions -- ISA parametric
+                                    # maps (T2/T1 relaxation, ...) and generated DTI tensor
+                                    # images -- are BIDS derivatives, not raw data. Auto-
+                                    # classifying them as a raw datatype produced invalid
+                                    # output (a single-frame "MESE" with no echo-/EchoTime;
+                                    # a "dwi" whose bval/bvec length did not match the
+                                    # volumes). Leave them 'etc' so they are not converted.
+                                    group_id = dset._get_frame_group_info(visu_pars)['group_id']
+                                    if any(g in ('FG_ISA', 'FG_DTI') for g in group_id):
+                                        datatype = 'etc'
+                                        warnings.warn('ScanID:[{}] RecoID:[{}] is a derived '
+                                                      'reconstruction (parametric/tensor map); '
+                                                      'marked as "etc" (BIDS derivative). Set '
+                                                      'DataType/modality to convert it.'
+                                                      ''.format(scan_id, reco_id))
+
                                     # ASL / perfusion (FAIR, (p)CASL, PASL, ...) is
                                     # neither BOLD nor anatomical; it belongs in BIDS
                                     # perf/asl, which is not emitted here. Leave it
                                     # unclassified rather than mislabel it.
-                                    if re.search(r'FAIR|ASL|perfusion', method, re.IGNORECASE):
+                                    elif re.search(r'FAIR|ASL|perfusion', method, re.IGNORECASE):
                                         datatype = 'etc'
                                         warnings.warn('ScanID:[{}] looks like ASL/perfusion ({}); BIDS '
                                                       'perf/asl is not supported, marked as "etc". Set '
