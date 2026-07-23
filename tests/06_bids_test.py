@@ -475,6 +475,47 @@ def test_multislicepack_uses_chunk_entity(h2_study, tmp_path):
                 'orphaned/missing sidecar for {}'.format(p.name)
 
 
+def test_single_echo_msme_is_t2w_not_mese(h2_study, tmp_path):
+    """A single-echo MSME is a T2-weighted image, not a BIDS MESE (which requires
+    an echo- entity). bids_helper must give it the T2w suffix, not MESE. Built by
+    relabelling a single-echo image scan's method as MSME (no online fixture ships
+    a single-echo MSME)."""
+    import re
+    import shutil
+
+    import pandas as pd
+
+    from brkraw_legacy import BrukerLoader
+    from brkraw_legacy.scripts.brkraw_legacy import is_localizer
+
+    d = BrukerLoader(str(h2_study))
+    scan = next((s for s in d.pvobj.avail_scan_id
+                 if (h2_study / str(s) / 'method').is_file()
+                 and not d.is_multi_echo(s, 1)
+                 and d._get_dim_info(d._get_visu_pars(s, 1))[1] == 'spatial_only'
+                 and not is_localizer(d, s, 1)), None)
+    if scan is None:
+        pytest.skip('no single-echo image scan with a method file')
+
+    study = tmp_path / 'study'
+    study.mkdir()
+    shutil.copy2(h2_study / 'subject', study / 'subject')
+    shutil.copytree(h2_study / str(scan), study / str(scan))
+    mpath = study / str(scan) / 'method'
+    mpath.write_text(re.sub(r'##\$Method=.*', '##$Method=MSME', mpath.read_text(), count=1))
+
+    parent = tmp_path / 'parent'
+    parent.mkdir()
+    (parent / 'study').symlink_to(study.resolve())
+    sheet = tmp_path / 'map'
+    subprocess.check_call(['brkraw-legacy', 'bids_helper', str(parent), str(sheet)])
+    df = pd.read_csv(str(sheet) + '.csv')
+    row = df[df['ScanID'] == scan]
+    assert not row.empty and row.iloc[0]['modality'] == 'T2w', \
+        'single-echo MSME should be T2w, got {}'.format(
+            None if row.empty else row.iloc[0]['modality'])
+
+
 def test_dwi_bval_tiled_to_volume_count(h2_study, tmp_path):
     """A multi-cycle/repetition DWI keeps every repeat as a separate volume; the
     per-direction bval/bvec must be tiled to one entry per volume (else BIDS
